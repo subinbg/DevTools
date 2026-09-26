@@ -205,6 +205,8 @@ type GuiConfig struct {
 	KeepSidePanelsWhenMainFocused bool `yaml:"keepSidePanelsWhenMainFocused"`
 	// If true, dragging with the left mouse button in a main panel selects text, and releasing the button copies the selection to the clipboard. Clicking without dragging keeps its usual meaning.
 	MouseTextSelection bool `yaml:"mouseTextSelection"`
+	// If true, the Remotes tab lists every remote's branches directly, under a header per remote and grouped by prefix like local branches, instead of listing the remotes and showing a remote's branches only after entering one. Remote-level actions (fetch, add, edit, remove) are then in the remote options menu.
+	UnfoldRemotes bool `yaml:"unfoldRemotes"`
 	// Height of the command log view
 	CommandLogSize int `yaml:"commandLogSize" jsonschema:"minimum=0"`
 	// Whether to split the main window when viewing file changes.
@@ -947,6 +949,7 @@ func GetDefaultConfigForPlatform(platform string) *UserConfig {
 			PrettyDiffTheme:                     "dark",
 			KeepSidePanelsWhenMainFocused:       true,
 			MouseTextSelection:                  true,
+			UnfoldRemotes:                       true,
 			CommandLogSize:                      8,
 			SplitDiff:                           "auto",
 			SkipRewordInEditorWarning:           false,

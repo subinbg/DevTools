@@ -1,24 +1,32 @@
 package controllers
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
+	"github.com/jesseduffield/lazygit/pkg/gocui"
 	"github.com/jesseduffield/lazygit/pkg/gui/context"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 	"github.com/jesseduffield/lazygit/pkg/utils"
+	"github.com/samber/lo"
 )
 
 type RemoteBranchesController struct {
 	baseController
 	*ListControllerTrait[*models.RemoteBranch]
 	c *ControllerCommon
+
+	// for the remote-level actions offered when the remotes are unfolded (see
+	// gui.unfoldRemotes), where the list of remotes isn't shown
+	remotesController *RemotesController
 }
 
 var _ types.IController = &RemoteBranchesController{}
 
 func NewRemoteBranchesController(
 	c *ControllerCommon,
+	remotesController *RemotesController,
 ) *RemoteBranchesController {
 	return &RemoteBranchesController{
 		baseController: baseController{},
@@ -28,11 +36,34 @@ func NewRemoteBranchesController(
 			c.Contexts().RemoteBranches.GetSelected,
 			c.Contexts().RemoteBranches.GetSelectedItems,
 		),
-		c: c,
+		c:                 c,
+		remotesController: remotesController,
 	}
 }
 
 func (self *RemoteBranchesController) GetKeybindings(opts types.KeybindingsOpts) []*types.Binding {
+	bindings := self.getBindings(opts)
+	if self.c.UserConfig().Gui.UnfoldRemotes {
+		bindings = append(bindings,
+			&types.Binding{
+				Keys:              opts.GetKeys(opts.Config.Branches.FetchRemote),
+				Handler:           self.withItem(self.fetchRemote),
+				GetDisabledReason: self.require(self.singleItemSelected()),
+				Description:       self.c.Tr.Fetch,
+				DisplayOnScreen:   true,
+			},
+			&types.Binding{
+				Keys:        opts.GetKeys(opts.Config.Universal.Edit),
+				Handler:     self.remoteOptionsMenu,
+				Description: self.c.Tr.ViewRemoteOptions,
+				OpensMenu:   true,
+			},
+		)
+	}
+	return bindings
+}
+
+func (self *RemoteBranchesController) getBindings(opts types.KeybindingsOpts) []*types.Binding {
 	return []*types.Binding{
 		{
 			Keys:              opts.GetKeys(opts.Config.Universal.Select),
@@ -118,6 +149,8 @@ func (self *RemoteBranchesController) GetOnRenderToMain() func() {
 			remoteBranch := self.context().GetSelected()
 			if remoteBranch == nil {
 				task = types.NewRenderStringTask("No branches for this remote")
+			} else if self.c.UserConfig().Gui.MainViewCommitGraph {
+				task = self.c.Helpers().LogGraph.RefTask(remoteBranch, nil)
 			} else {
 				cmdObj := self.c.Git().Branch.GetGraphCmdObj(remoteBranch.FullRefName())
 				task = types.NewRunCommandTask(cmdObj.GetCmd())
@@ -136,6 +169,73 @@ func (self *RemoteBranchesController) GetOnRenderToMain() func() {
 
 func (self *RemoteBranchesController) context() *context.RemoteBranchesContext {
 	return self.c.Contexts().RemoteBranches
+}
+
+func (self *RemoteBranchesController) remoteOf(branch *models.RemoteBranch) *models.Remote {
+	remote, _ := lo.Find(self.c.Model().Remotes, func(remote *models.Remote) bool {
+		return remote.Name == branch.RemoteName
+	})
+	return remote
+}
+
+// fetchRemote fetches the remote the selected branch belongs to.
+func (self *RemoteBranchesController) fetchRemote(branch *models.RemoteBranch) error {
+	remote := self.remoteOf(branch)
+	if remote == nil {
+		return nil
+	}
+	return self.c.WithWaitingStatus(self.c.Tr.FetchingStatus, func(task gocui.Task) error {
+		if err := self.c.Git().Sync.FetchRemote(task, remote.Name); err != nil {
+			return err
+		}
+		self.c.Refresh(types.RefreshOptions{Scope: []types.RefreshableView{types.BRANCHES, types.REMOTES}})
+		return nil
+	})
+}
+
+// remoteOptionsMenu offers the actions of the remotes list (which isn't shown
+// when the remotes are unfolded) for the selected branch's remote.
+func (self *RemoteBranchesController) remoteOptionsMenu() error {
+	var remote *models.Remote
+	branch := self.context().GetSelected()
+	if branch != nil {
+		remote = self.remoteOf(branch)
+	}
+
+	items := []*types.MenuItem{}
+	if remote != nil {
+		items = append(items,
+			&types.MenuItem{
+				Label:   fmt.Sprintf(self.c.Tr.FetchRemoteItem, remote.Name),
+				OnPress: func() error { return self.fetchRemote(branch) },
+				Keys:    []gocui.Key{gocui.NewKeyRune('f')},
+			},
+			&types.MenuItem{
+				Label:   fmt.Sprintf(self.c.Tr.EditRemoteItem, remote.Name),
+				OnPress: func() error { return self.remotesController.edit(remote) },
+				Keys:    []gocui.Key{gocui.NewKeyRune('e')},
+			},
+			&types.MenuItem{
+				Label:   fmt.Sprintf(self.c.Tr.RemoveRemoteItem, remote.Name),
+				OnPress: func() error { return self.remotesController.remove(remote) },
+				Keys:    []gocui.Key{gocui.NewKeyRune('d')},
+			},
+		)
+	}
+	items = append(items,
+		&types.MenuItem{
+			Label:   self.c.Tr.NewRemote,
+			OnPress: self.remotesController.add,
+			Keys:    []gocui.Key{gocui.NewKeyRune('n')},
+		},
+		&types.MenuItem{
+			Label:   self.c.Tr.AddForkRemote,
+			OnPress: self.remotesController.addFork,
+			Keys:    []gocui.Key{gocui.NewKeyRune('a')},
+		},
+	)
+
+	return self.c.Menu(types.CreateMenuOptions{Title: self.c.Tr.RemoteOptionsTitle, Items: items})
 }
 
 func (self *RemoteBranchesController) delete(selectedBranches []*models.RemoteBranch) error {

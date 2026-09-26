@@ -137,11 +137,12 @@ func NewLocalCommitsContext(c *ContextCommon) *LocalCommitsContext {
 			})
 		} else {
 			if showWorkingTreeRow(c) {
+				// the graph draws the node of the working-tree row when it can
+				graphRow := presentation.WorkingTreeGraphRow(c.Common, c.Model().Commits, shouldShowGraph(c))
 				result = append(result, &NonModelItem{
-					Index: 0,
-					Content: presentation.WorkingTreeGraphRow(c.Common, c.Model().Commits, shouldShowGraph(c)) +
-						presentation.FormatWorkingTreeRow(c.Model().Files, c.Tr),
-					Column: commitGraphColumn,
+					Index:   0,
+					Content: graphRow + presentation.FormatWorkingTreeRow(c.Model().Files, c.Tr, graphRow == ""),
+					Column:  commitGraphColumn,
 				})
 			}
 

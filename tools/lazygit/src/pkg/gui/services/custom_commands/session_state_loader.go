@@ -212,6 +212,23 @@ type SessionState struct {
 	CheckedOutBranch       *Branch
 }
 
+// selectedRemote is the selected remote: the selected row of the remotes
+// list, or, with gui.unfoldRemotes (where that list isn't shown), the remote
+// of the selected remote branch.
+func (self *SessionStateLoader) selectedRemote() *models.Remote {
+	if !self.c.UserConfig().Gui.UnfoldRemotes {
+		return self.c.Contexts().Remotes.GetSelected()
+	}
+	branch := self.c.Contexts().RemoteBranches.GetSelected()
+	if branch == nil {
+		return nil
+	}
+	remote, _ := lo.Find(self.c.Model().Remotes, func(remote *models.Remote) bool {
+		return remote.Name == branch.RemoteName
+	})
+	return remote
+}
+
 func (self *SessionStateLoader) call() *SessionState {
 	selectedLocalCommit := commitShimFromModelCommit(self.c.Contexts().LocalCommits.GetSelected())
 	selectedLocalCommitRange := makeCommitRange(self.c.Contexts().LocalCommits.GetSelectedItems())
@@ -248,7 +265,7 @@ func (self *SessionStateLoader) call() *SessionState {
 		SelectedCommitRange:    selectedCommitRange,
 		SelectedLocalBranch:    branchShimFromModelBranch(self.c.Contexts().Branches.GetSelected()),
 		SelectedRemoteBranch:   remoteBranchShimFromModelRemoteBranch(self.c.Contexts().RemoteBranches.GetSelected()),
-		SelectedRemote:         remoteShimFromModelRemote(self.c.Contexts().Remotes.GetSelected()),
+		SelectedRemote:         remoteShimFromModelRemote(self.selectedRemote()),
 		SelectedTag:            tagShimFromModelRemote(self.c.Contexts().Tags.GetSelected()),
 		SelectedStashEntry:     stashEntryShimFromModelRemote(self.c.Contexts().Stash.GetSelected()),
 		SelectedCommitFile:     commitFileShimFromModelRemote(self.c.Contexts().CommitFiles.GetSelectedFile()),

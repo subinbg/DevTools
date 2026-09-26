@@ -700,6 +700,11 @@ type TranslationSet struct {
 	ShowingDiffForRange                   string
 	ShowingFirstNCommits                  string
 	SelectionCopiedToClipboard            string
+	RemoteOptionsTitle                    string
+	ViewRemoteOptions                     string
+	FetchRemoteItem                       string
+	EditRemoteItem                        string
+	RemoveRemoteItem                      string
 	CommitDiff                            string
 	CopyCommitHashToClipboard             string
 	CommitHash                            string
@@ -1871,6 +1876,11 @@ func EnglishTranslationSet() *TranslationSet {
 		ShowingDiffForRange:                      "Showing diff for range",
 		ShowingFirstNCommits:                     "Showing the first %d commits",
 		SelectionCopiedToClipboard:               "Selection copied to clipboard",
+		RemoteOptionsTitle:                       "Remote options",
+		ViewRemoteOptions:                        "View remote options",
+		FetchRemoteItem:                          "Fetch remote '%s'",
+		EditRemoteItem:                           "Edit remote '%s'",
+		RemoveRemoteItem:                         "Remove remote '%s'",
 		CommitDiff:                               "Commit diff",
 		CopyCommitHashToClipboard:                "Copy abbreviated commit hash to clipboard",
 		CommitHash:                               "Commit hash",

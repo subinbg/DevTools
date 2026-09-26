@@ -40,15 +40,29 @@ func (gui *Gui) sidePanelTabTitles() map[string]string {
 	}
 }
 
+// sidePanelViewName is the view a gui.sidePanels name controls. With
+// gui.unfoldRemotes the "remotes" tab shows the remote branches list rather
+// than the list of remotes.
+func (gui *Gui) sidePanelViewName(name string) string {
+	if name == "remotes" && gui.c.UserConfig().Gui.UnfoldRemotes {
+		return "remoteBranches"
+	}
+	return sidePanelViewNames[name]
+}
+
 // sidePanelContexts maps each gui.sidePanels name to the context it controls.
-func sidePanelContexts(contextTree *context.ContextTree) map[string]types.Context {
+func sidePanelContexts(contextTree *context.ContextTree, unfoldRemotes bool) map[string]types.Context {
+	var remotes types.Context = contextTree.Remotes
+	if unfoldRemotes {
+		remotes = contextTree.RemoteBranches
+	}
 	return map[string]types.Context{
 		"status":     contextTree.Status,
 		"files":      contextTree.Files,
 		"worktrees":  contextTree.Worktrees,
 		"submodules": contextTree.Submodules,
 		"branches":   contextTree.Branches,
-		"remotes":    contextTree.Remotes,
+		"remotes":    remotes,
 		"tags":       contextTree.Tags,
 		"commits":    contextTree.LocalCommits,
 		"reflog":     contextTree.ReflogCommits,
@@ -72,7 +86,7 @@ func (gui *Gui) applySidePanelConfig() {
 // been focused yet (the view z-order is otherwise set from a fixed list that
 // need not match the configured tab order).
 func (gui *Gui) moveDefaultTabsToTop() {
-	contexts := sidePanelContexts(gui.State.Contexts)
+	contexts := sidePanelContexts(gui.State.Contexts, gui.c.UserConfig().Gui.UnfoldRemotes)
 	for _, panel := range gui.c.UserConfig().Gui.SidePanels {
 		gui.helpers.Window.MoveToTopOfWindow(contexts[panel[0]])
 	}
@@ -109,7 +123,8 @@ func (gui *Gui) reloadSidePanels() {
 // name; since the layout produces no dimensions for those windows, their views
 // stay hidden rather than overlapping a visible panel.
 func (gui *Gui) assignSidePanelWindows(contextTree *context.ContextTree) {
-	contexts := sidePanelContexts(contextTree)
+	unfoldRemotes := gui.c.UserConfig().Gui.UnfoldRemotes
+	contexts := sidePanelContexts(contextTree, unfoldRemotes)
 	assigned := make(map[string]bool, len(contexts))
 
 	for _, panel := range gui.c.UserConfig().Gui.SidePanels {
@@ -131,7 +146,14 @@ func (gui *Gui) assignSidePanelWindows(contextTree *context.ContextTree) {
 	// first use. Assign the window hosting branches or commits, respectively;
 	// unlike e.g. remotes, those tabs can't be hidden, so their windows are
 	// always part of the layout.
-	contextTree.RemoteBranches.SetWindowName(contextTree.Branches.GetWindowName())
+	if unfoldRemotes {
+		// The remote branches list is the remotes tab itself and was assigned
+		// above; the list of remotes is never shown, so give its view a window
+		// that isn't part of the layout.
+		contextTree.Remotes.SetWindowName("hiddenRemotes")
+	} else {
+		contextTree.RemoteBranches.SetWindowName(contextTree.Branches.GetWindowName())
+	}
 	contextTree.SubCommits.SetWindowName(contextTree.Branches.GetWindowName())
 	contextTree.CommitFiles.SetWindowName(contextTree.LocalCommits.GetWindowName())
 }

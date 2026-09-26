@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -126,14 +127,24 @@ func (self *RemoteLoader) getRemoteBranchesByRemoteName() (map[string][]*models.
 
 	cmdArgs := NewGitCmd("for-each-ref").
 		Arg(fmt.Sprintf("--sort=%s", sortOrder)).
-		Arg("--format=%(refname)").
+		Arg("--format=%(refname)%00%(objectname)%00%(committerdate:unix)").
 		Arg("refs/remotes").
 		ToArgv()
 
 	err := self.cmd.New(cmdArgs).DontLog().RunAndProcessLines(func(line string) (bool, error) {
 		line = strings.TrimSpace(line)
 
-		split := strings.SplitN(line, "/", 4)
+		fields := strings.SplitN(line, "\x00", 3)
+		if len(fields) != 3 {
+			return false, nil
+		}
+		commitHash := fields[1]
+		recency := ""
+		if timestamp, err := strconv.ParseInt(fields[2], 10, 64); err == nil {
+			recency = utils.UnixToTimeAgo(timestamp)
+		}
+
+		split := strings.SplitN(fields[0], "/", 4)
 		if len(split) != 4 {
 			return false, nil
 		}
@@ -153,6 +164,8 @@ func (self *RemoteLoader) getRemoteBranchesByRemoteName() (map[string][]*models.
 			&models.RemoteBranch{
 				Name:       name,
 				RemoteName: remoteName,
+				CommitHash: commitHash,
+				Recency:    recency,
 			})
 		return false, nil
 	})

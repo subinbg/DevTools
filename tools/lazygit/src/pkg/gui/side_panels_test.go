@@ -26,7 +26,7 @@ func TestSidePanelLookupsCoverAllValidTabs(t *testing.T) {
 
 	assert.Equal(t, want, sortedKeys(sidePanelViewNames))
 	assert.Equal(t, want, sortedKeys(gui.sidePanelTabTitles()))
-	assert.Equal(t, want, sortedKeys(sidePanelContexts(gui.contextTree())))
+	assert.Equal(t, want, sortedKeys(sidePanelContexts(gui.contextTree(), false)))
 }
 
 // The transient contexts must end up in windows that exist under the configured

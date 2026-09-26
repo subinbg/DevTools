@@ -57,7 +57,9 @@ func InUnstagedSection(file *models.File) bool {
 // FormatWorkingTreeRow renders the "WIP" row shown above the commits when the
 // working tree has changes, like GitKraken's work-in-progress node:
 // "◌ WIP · 1 staged · 2 unstaged · 1 untracked" (zero counts are omitted).
-func FormatWorkingTreeRow(files []*models.File, tr *i18n.TranslationSet) string {
+// withMarker prepends the "◌" node glyph; pass false when the graph draws the
+// node itself (see WorkingTreeGraphRow).
+func FormatWorkingTreeRow(files []*models.File, tr *i18n.TranslationSet, withMarker bool) string {
 	counts := CountWorkingTreeChanges(files)
 	parts := []string{}
 	if counts.Staged > 0 {
@@ -70,7 +72,11 @@ func FormatWorkingTreeRow(files []*models.File, tr *i18n.TranslationSet) string 
 		parts = append(parts, style.FgMagenta.Sprint(strconv.Itoa(counts.Untracked)+" "+tr.LcUntracked))
 	}
 
-	label := theme.DefaultTextColor.SetBold().Sprint("◌ " + tr.WorkInProgress)
+	label := tr.WorkInProgress
+	if withMarker {
+		label = "◌ " + label
+	}
+	label = theme.DefaultTextColor.SetBold().Sprint(label)
 	if len(parts) == 0 {
 		return label
 	}

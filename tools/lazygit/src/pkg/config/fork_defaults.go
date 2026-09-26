@@ -36,6 +36,7 @@ func ApplyUpstreamDefaults(cfg *UserConfig) {
 
 	// sidebar
 	cfg.Gui.GroupBranchesByPrefix = false
+	cfg.Gui.UnfoldRemotes = false
 	cfg.Gui.ShowBranchCommitHash = false
 	cfg.Gui.ShowDivergenceFromBaseBranch = "none"
 	cfg.Gui.ExpandFocusedSidePanel = false

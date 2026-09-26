@@ -907,7 +907,7 @@ func (gui *Gui) viewTabMap() map[string][]context.TabView {
 		result[panel[0]] = lo.Map(panel, func(name string, _ int) context.TabView {
 			return context.TabView{
 				Tab:      titles[name],
-				ViewName: sidePanelViewNames[name],
+				ViewName: gui.sidePanelViewName(name),
 			}
 		})
 	}

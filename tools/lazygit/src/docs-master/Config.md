@@ -335,6 +335,13 @@ gui:
   # dragging keeps its usual meaning.
   mouseTextSelection: true
 
+  # If true, the Remotes tab lists every remote's branches directly, under a
+  # header per remote and grouped by prefix like local branches, instead of
+  # listing the remotes and showing a remote's branches only after entering one.
+  # Remote-level actions (fetch, add, edit, remove) are then in the remote options
+  # menu.
+  unfoldRemotes: true
+
   # Height of the command log view
   commandLogSize: 8
 

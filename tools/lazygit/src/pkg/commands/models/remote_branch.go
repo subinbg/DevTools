@@ -4,6 +4,14 @@ package models
 type RemoteBranch struct {
 	Name       string
 	RemoteName string
+	// hash of the commit the branch points at
+	CommitHash string
+	// how long ago that commit was made, e.g. "2w", like Branch.Recency
+	Recency string
+}
+
+func (r *RemoteBranch) URN() string {
+	return "remoteBranch-" + r.FullName()
 }
 
 func (r *RemoteBranch) FullName() string {

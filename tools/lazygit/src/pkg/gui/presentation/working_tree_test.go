@@ -30,7 +30,8 @@ func TestWorkingTreeSummary(t *testing.T) {
 	defer color.ForceSetColorLevel(oldColorLevel)
 
 	tr := i18n.EnglishTranslationSet()
-	assert.Equal(t, "◌ WIP · 4 staged · 3 unstaged · 1 untracked", FormatWorkingTreeRow(files, tr))
-	assert.Equal(t, "◌ WIP · 1 untracked", FormatWorkingTreeRow(files[3:4], tr))
-	assert.Equal(t, "◌ WIP", FormatWorkingTreeRow(nil, tr))
+	assert.Equal(t, "◌ WIP · 4 staged · 3 unstaged · 1 untracked", FormatWorkingTreeRow(files, tr, true))
+	assert.Equal(t, "◌ WIP · 1 untracked", FormatWorkingTreeRow(files[3:4], tr, true))
+	assert.Equal(t, "◌ WIP", FormatWorkingTreeRow(nil, tr, true))
+	assert.Equal(t, "WIP · 1 untracked", FormatWorkingTreeRow(files[3:4], tr, false))
 }

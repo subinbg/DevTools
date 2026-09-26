@@ -31,9 +31,16 @@ func (self *LogGraphHelper) AllBranchesTask() *types.RenderFuncTask {
 	return self.task("HEAD", nil, true)
 }
 
-// BranchTask returns a task rendering the log of the given branch.
+// BranchTask returns a task rendering the log of the given local branch.
 func (self *LogGraphHelper) BranchTask(branch *models.Branch) *types.RenderFuncTask {
-	return self.task(branch.FullRefName(), branch, false)
+	return self.RefTask(branch, branch)
+}
+
+// RefTask returns a task rendering the log of any ref (a remote branch, a
+// tag). refForPushedStatus is the local branch whose unpushed commits are
+// marked, or nil.
+func (self *LogGraphHelper) RefTask(ref models.Ref, refForPushedStatus models.Ref) *types.RenderFuncTask {
+	return self.task(ref.FullRefName(), refForPushedStatus, false)
 }
 
 // task captures everything the rendering needs from the model here, on the

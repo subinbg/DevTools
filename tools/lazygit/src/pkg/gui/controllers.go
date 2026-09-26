@@ -158,8 +158,6 @@ func (gui *Gui) resetHelpersAndControllers() {
 		common,
 	)
 
-	remoteBranchesController := controllers.NewRemoteBranchesController(common)
-
 	menuController := controllers.NewMenuController(common, menuListController)
 	localCommitsController := controllers.NewLocalCommitsController(common, syncController.HandlePull)
 	tagsController := controllers.NewTagsController(common)
@@ -171,6 +169,7 @@ func (gui *Gui) resetHelpersAndControllers() {
 		common,
 		func(branches []*models.RemoteBranch) { gui.State.Model.RemoteBranches = branches },
 	)
+	remoteBranchesController := controllers.NewRemoteBranchesController(common, remotesController)
 	worktreesController := controllers.NewWorktreesController(common)
 	undoController := controllers.NewUndoController(common)
 	globalController := controllers.NewGlobalController(common)

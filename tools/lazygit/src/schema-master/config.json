@@ -887,6 +887,11 @@
           "description": "If true, dragging with the left mouse button in a main panel selects text, and releasing the button copies the selection to the clipboard. Clicking without dragging keeps its usual meaning.",
           "default": true
         },
+        "unfoldRemotes": {
+          "type": "boolean",
+          "description": "If true, the Remotes tab lists every remote's branches directly, under a header per remote and grouped by prefix like local branches, instead of listing the remotes and showing a remote's branches only after entering one. Remote-level actions (fetch, add, edit, remove) are then in the remote options menu.",
+          "default": true
+        },
         "commandLogSize": {
           "type": "integer",
           "minimum": 0,

@@ -106,9 +106,15 @@ func (self *TagsController) GetOnRenderToMain() func() {
 			if tag == nil {
 				task = types.NewRenderStringTask("No tags")
 			} else {
-				cmdObj := self.c.Git().Branch.GetGraphCmdObj(tag.FullRefName())
 				prefix := self.getTagInfo(tag) + "\n\n---\n\n"
-				task = types.NewRunCommandTaskWithPrefix(cmdObj.GetCmd(), prefix)
+				if self.c.UserConfig().Gui.MainViewCommitGraph {
+					graphTask := self.c.Helpers().LogGraph.RefTask(tag, nil)
+					graphTask.Prefix = prefix
+					task = graphTask
+				} else {
+					cmdObj := self.c.Git().Branch.GetGraphCmdObj(tag.FullRefName())
+					task = types.NewRunCommandTaskWithPrefix(cmdObj.GetCmd(), prefix)
+				}
 			}
 
 			self.c.RenderToMainViews(types.RefreshMainOpts{
