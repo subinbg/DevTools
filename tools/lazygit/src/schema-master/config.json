@@ -432,6 +432,11 @@
           "description": "Command used when displaying the current branch git log in the main window",
           "default": "git log --graph --color=always --abbrev-commit --date=relative --pretty=format:'%C(bold yellow)%h%C(reset)%C(auto)%d%C(reset) %s %C(dim white)· %an, %ad%C(reset)' {{branchName}} --"
         },
+        "commitDetailsFormat": {
+          "type": "string",
+          "description": "A git --pretty format for the header shown above a commit's patch in the main window (refs, subject, body, author, committer, parents). Empty means git's default header.",
+          "default": "tformat:%C(yellow)commit %H%C(auto)%d%C(reset)%n%C(bold)%s%C(reset)%n%+b%nAuthor:    %an \u003c%ae\u003e  %ad%nCommitter: %cn \u003c%ce\u003e  %cd%nParents:   %p%n"
+        },
         "allBranchesLogCmds": {
           "items": {
             "type": "string"

@@ -1,5 +1,14 @@
 package config
 
+// DefaultCommitDetailsFormat is the header shown above a commit's patch: the
+// refs, the subject and body, author and committer with dates, and the
+// parents, in the spirit of GitKraken's commit details panel.
+const DefaultCommitDetailsFormat = "tformat:%C(yellow)commit %H%C(auto)%d%C(reset)%n" +
+	"%C(bold)%s%C(reset)%n%+b%n" +
+	"Author:    %an <%ae>  %ad%n" +
+	"Committer: %cn <%ce>  %cd%n" +
+	"Parents:   %p%n"
+
 // ApplyUpstreamDefaults resets the settings whose defaults this fork changed
 // back to upstream lazygit's values. The integration test harness uses it so
 // that upstream's tests keep passing unchanged.
@@ -9,6 +18,7 @@ func ApplyUpstreamDefaults(cfg *UserConfig) {
 	cfg.Git.Log.ShowWholeGraph = false
 
 	// main panel
+	cfg.Git.CommitDetailsFormat = ""
 	cfg.Gui.StatusPanelView = "dashboard"
 	cfg.Git.BranchLogCmd = "git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --"
 	cfg.Git.AllBranchesLogCmds = []string{"git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium"}

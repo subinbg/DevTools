@@ -478,6 +478,11 @@ git:
   # Command used when displaying the current branch git log in the main window
   branchLogCmd: git log --graph --color=always --abbrev-commit --date=relative --pretty=format:'%C(bold yellow)%h%C(reset)%C(auto)%d%C(reset) %s %C(dim white)· %an, %ad%C(reset)' {{branchName}} --
 
+  # A git --pretty format for the header shown above a commit's patch in the main
+  # window (refs, subject, body, author, committer, parents). Empty means git's
+  # default header.
+  commitDetailsFormat: 'tformat:%C(yellow)commit %H%C(auto)%d%C(reset)%n%C(bold)%s%C(reset)%n%+b%nAuthor:    %an <%ae>  %ad%nCommitter: %cn <%ce>  %cd%nParents:   %p%n'
+
   # Commands used to display git log of all branches in the main window, they will
   # be cycled in order of appearance (array of strings)
   allBranchesLogCmds:

@@ -240,25 +240,19 @@ func (self *CommitCommands) AmendHeadCmdObj() *oscommands.CmdObj {
 	return self.cmd.New(cmdArgs)
 }
 
-// ShowCommitFormat is the header shown above a commit's patch: the refs, the
-// subject and body, author and committer with dates, and the parents, in the
-// spirit of GitKraken's commit details panel.
-const ShowCommitFormat = "--pretty=tformat:%C(yellow)commit %H%C(auto)%d%C(reset)%n" +
-	"%C(bold)%s%C(reset)%n%+b%n" +
-	"Author:    %an <%ae>  %ad%n" +
-	"Committer: %cn <%ce>  %cd%n" +
-	"Parents:   %p%n"
-
 func (self *CommitCommands) ShowCmdObj(hash string, filterPaths []string) *oscommands.CmdObj {
+	// git.commitDetailsFormat is a --pretty format for the header above the
+	// patch; empty means git's default header
+	detailsFormat := self.UserConfig().Git.CommitDetailsFormat
+
 	cmdArgs := NewGitCmd("show").
 		Config("diff.noprefix=false").
 		AddCommonDiffArgs(self.diffRendererConfigManager, self.UserConfig(), true).
 		Arg("--submodule").
-		Arg("--color=" + self.diffRendererConfigManager.GetColorArg()).
+		Arg("--color="+self.diffRendererConfigManager.GetColorArg()).
 		Arg("--stat").
 		Arg("--decorate").
-		Arg(ShowCommitFormat).
-		Arg("--date=human").
+		ArgIf(detailsFormat != "", "--pretty="+detailsFormat, "--date=human").
 		Arg("-p").
 		Arg(hash).
 		Arg("--").
