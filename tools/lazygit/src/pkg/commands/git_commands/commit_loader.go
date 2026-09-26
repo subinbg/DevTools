@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -216,19 +215,18 @@ func (self *CommitLoader) extractCommitFromLine(hashPool *utils.StringPool, line
 	}
 
 	var tags []string
+	var refs []models.CommitRef
 
 	if extraInfo != "" {
-		extraInfoFields := strings.SplitSeq(extraInfo, ",")
-		for extraInfoField := range extraInfoFields {
-			extraInfoField = strings.TrimSpace(extraInfoField)
-			re := regexp.MustCompile(`tag: (.+)`)
-			tagMatch := re.FindStringSubmatch(extraInfoField)
-			if len(tagMatch) > 1 {
-				tags = append(tags, tagMatch[1])
+		var shortDecorations string
+		refs, shortDecorations = parseDecorations(extraInfo)
+		for _, ref := range refs {
+			if ref.Kind == models.CommitRefTag {
+				tags = append(tags, ref.Name)
 			}
 		}
 
-		extraInfo = "(" + extraInfo + ")"
+		extraInfo = "(" + shortDecorations + ")"
 	}
 
 	unitTimestampInt, _ := strconv.Atoi(unixTimestamp)
@@ -242,6 +240,7 @@ func (self *CommitLoader) extractCommitFromLine(hashPool *utils.StringPool, line
 		Hash:          hash,
 		Name:          message,
 		Tags:          tags,
+		Refs:          refs,
 		ExtraInfo:     extraInfo,
 		UnixTimestamp: int64(unitTimestampInt),
 		AuthorName:    authorName,
@@ -606,9 +605,12 @@ func (self *CommitLoader) getLogCmd(opts GetCommitsOptions) *oscommands.CmdObj {
 	cmdArgs := NewGitCmd("log").
 		Arg(refSpec).
 		ArgIf(gitLogOrder != "default", "--"+gitLogOrder).
-		ArgIf(opts.All, "--all").
+		// stash and notes refs are separate roots that only clutter the whole-repo graph
+		ArgIf(opts.All, "--exclude=refs/stash", "--exclude=refs/notes/*", "--all").
 		Arg("--oneline").
 		Arg(prettyFormat).
+		// full ref names let us tell local branches, remote branches and tags apart
+		Arg("--decorate=full").
 		Arg("--abbrev=40").
 		ArgIf(opts.FilterAuthor != "", "--author="+opts.FilterAuthor).
 		ArgIf(opts.Limit, "-300").

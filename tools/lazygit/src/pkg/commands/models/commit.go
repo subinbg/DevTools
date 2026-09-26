@@ -41,14 +41,37 @@ const (
 	DivergenceRight
 )
 
+// CommitRefKind classifies a ref that points at a commit, as reported by
+// `git log --decorate=full`.
+type CommitRefKind uint8
+
+const (
+	CommitRefLocalBranch CommitRefKind = iota
+	CommitRefRemoteBranch
+	CommitRefTag
+	CommitRefDetachedHead
+	CommitRefOther
+)
+
+// CommitRef is a ref that points at a commit: a local branch, a remote branch,
+// a tag, or a detached HEAD.
+type CommitRef struct {
+	Kind CommitRefKind
+	// Short name, e.g. "main", "origin/main", "v1.0.0", or "HEAD" when detached
+	Name string
+	// True if HEAD points at this ref, i.e. it is checked out
+	IsHead bool
+}
+
 // Commit : A git commit
 type Commit struct {
 	hash          *string
 	Name          string
 	Tags          []string
-	ExtraInfo     string // something like 'HEAD -> master, tag: v0.15.2'
-	AuthorName    string // something like 'Jesse Duffield'
-	AuthorEmail   string // something like 'jessedduffield@gmail.com'
+	Refs          []CommitRef // refs pointing at this commit, parsed from ExtraInfo
+	ExtraInfo     string      // something like 'HEAD -> master, tag: v0.15.2'
+	AuthorName    string      // something like 'Jesse Duffield'
+	AuthorEmail   string      // something like 'jessedduffield@gmail.com'
 	UnixTimestamp int64
 
 	// Hashes of parent commits (will be multiple if it's a merge commit)
@@ -71,6 +94,7 @@ type NewCommitOpts struct {
 	Action        todo.TodoCommand
 	ActionFlag    string
 	Tags          []string
+	Refs          []CommitRef
 	ExtraInfo     string
 	AuthorName    string
 	AuthorEmail   string
@@ -87,6 +111,7 @@ func NewCommit(hashPool *utils.StringPool, opts NewCommitOpts) *Commit {
 		Action:        opts.Action,
 		ActionFlag:    opts.ActionFlag,
 		Tags:          opts.Tags,
+		Refs:          opts.Refs,
 		ExtraInfo:     opts.ExtraInfo,
 		AuthorName:    opts.AuthorName,
 		AuthorEmail:   opts.AuthorEmail,

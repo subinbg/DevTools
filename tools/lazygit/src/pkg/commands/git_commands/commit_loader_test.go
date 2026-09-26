@@ -16,16 +16,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var commitsOutput = strings.ReplaceAll(`+0eea75e8c631fba6b58135697835d58ba4c18dbc|1640826609|Jesse Duffield|jessedduffield@gmail.com|b21997d6b4cbdf84b149|>|HEAD -> better-tests|better typing for rebase mode
-+b21997d6b4cbdf84b149d8e6a2c4d06a8e9ec164|1640824515|Jesse Duffield|jessedduffield@gmail.com|e94e8fc5b6fab4cb755f|>|origin/better-tests|fix logging
-+e94e8fc5b6fab4cb755f29f1bdb3ee5e001df35c|1640823749|Jesse Duffield|jessedduffield@gmail.com|d8084cd558925eb7c9c3|>|tag: 123, tag: 456|refactor
+var commitsOutput = strings.ReplaceAll(`+0eea75e8c631fba6b58135697835d58ba4c18dbc|1640826609|Jesse Duffield|jessedduffield@gmail.com|b21997d6b4cbdf84b149|>|HEAD -> refs/heads/better-tests|better typing for rebase mode
++b21997d6b4cbdf84b149d8e6a2c4d06a8e9ec164|1640824515|Jesse Duffield|jessedduffield@gmail.com|e94e8fc5b6fab4cb755f|>|refs/remotes/origin/better-tests|fix logging
++e94e8fc5b6fab4cb755f29f1bdb3ee5e001df35c|1640823749|Jesse Duffield|jessedduffield@gmail.com|d8084cd558925eb7c9c3|>|tag: refs/tags/123, tag: refs/tags/456|refactor
 +d8084cd558925eb7c9c38afeed5725c21653ab90|1640821426|Jesse Duffield|jessedduffield@gmail.com|65f910ebd85283b5cce9|>||WIP
 +65f910ebd85283b5cce9bf67d03d3f1a9ea3813a|1640821275|Jesse Duffield|jessedduffield@gmail.com|26c07b1ab33860a1a759|>||WIP
 +26c07b1ab33860a1a7591a0638f9925ccf497ffa|1640750752|Jesse Duffield|jessedduffield@gmail.com|3d4470a6c072208722e5|>||WIP
 +3d4470a6c072208722e5ae9a54bcb9634959a1c5|1640748818|Jesse Duffield|jessedduffield@gmail.com|053a66a7be3da43aacdc|>||WIP
 +053a66a7be3da43aacdc7aa78e1fe757b82c4dd2|1640739815|Jesse Duffield|jessedduffield@gmail.com|985fe482e806b172aea4|>||refactoring the config struct`, "|", "\x00")
 
-var singleCommitOutput = strings.ReplaceAll(`+0eea75e8c631fba6b58135697835d58ba4c18dbc|1640826609|Jesse Duffield|jessedduffield@gmail.com|b21997d6b4cbdf84b149|>|HEAD -> better-tests|better typing for rebase mode`, "|", "\x00")
+var singleCommitOutput = strings.ReplaceAll(`+0eea75e8c631fba6b58135697835d58ba4c18dbc|1640826609|Jesse Duffield|jessedduffield@gmail.com|b21997d6b4cbdf84b149|>|HEAD -> refs/heads/better-tests|better typing for rebase mode`, "|", "\x00")
 
 func TestGetCommits(t *testing.T) {
 	type scenario struct {
@@ -45,7 +45,7 @@ func TestGetCommits(t *testing.T) {
 			opts:     GetCommitsOptions{RefName: "HEAD", RefForPushedStatus: &models.Branch{Name: "mybranch"}, IncludeRebaseCommits: false},
 			runner: oscommands.NewFakeRunner(t).
 				ExpectGitArgs([]string{"rev-list", "refs/heads/mybranch", "^mybranch@{u}"}, "", nil).
-				ExpectGitArgs([]string{"log", "HEAD", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--abbrev=40", "--no-show-signature", "--"}, "", nil),
+				ExpectGitArgs([]string{"log", "HEAD", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--decorate=full", "--abbrev=40", "--no-show-signature", "--"}, "", nil),
 
 			expectedCommitOpts: []models.NewCommitOpts{},
 			expectedError:      nil,
@@ -56,7 +56,7 @@ func TestGetCommits(t *testing.T) {
 			opts:     GetCommitsOptions{RefName: "refs/heads/mybranch", RefForPushedStatus: &models.Branch{Name: "mybranch"}, IncludeRebaseCommits: false},
 			runner: oscommands.NewFakeRunner(t).
 				ExpectGitArgs([]string{"rev-list", "refs/heads/mybranch", "^mybranch@{u}"}, "", nil).
-				ExpectGitArgs([]string{"log", "refs/heads/mybranch", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--abbrev=40", "--no-show-signature", "--"}, "", nil),
+				ExpectGitArgs([]string{"log", "refs/heads/mybranch", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--decorate=full", "--abbrev=40", "--no-show-signature", "--"}, "", nil),
 
 			expectedCommitOpts: []models.NewCommitOpts{},
 			expectedError:      nil,
@@ -70,7 +70,7 @@ func TestGetCommits(t *testing.T) {
 				// here it's seeing which commits are yet to be pushed
 				ExpectGitArgs([]string{"rev-list", "refs/heads/mybranch", "^mybranch@{u}", "^refs/remotes/origin/master", "^refs/remotes/origin/main"}, "0eea75e8c631fba6b58135697835d58ba4c18dbc\n", nil).
 				// here it's actually getting all the commits in a formatted form, one per line
-				ExpectGitArgs([]string{"log", "HEAD", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--abbrev=40", "--no-show-signature", "--"}, commitsOutput, nil).
+				ExpectGitArgs([]string{"log", "HEAD", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--decorate=full", "--abbrev=40", "--no-show-signature", "--"}, commitsOutput, nil).
 				// here it's testing which of the configured main branches have an upstream
 				ExpectGitArgs([]string{"rev-parse", "--symbolic-full-name", "master@{u}"}, "refs/remotes/origin/master", nil).       // this one does
 				ExpectGitArgs([]string{"rev-parse", "--symbolic-full-name", "main@{u}"}, "", errors.New("error")).                   // this one doesn't, so it checks origin instead
@@ -90,6 +90,7 @@ func TestGetCommits(t *testing.T) {
 					Action:        models.ActionNone,
 					Tags:          nil,
 					ExtraInfo:     "(HEAD -> better-tests)",
+					Refs:          []models.CommitRef{{Kind: models.CommitRefLocalBranch, Name: "better-tests", IsHead: true}},
 					AuthorName:    "Jesse Duffield",
 					AuthorEmail:   "jessedduffield@gmail.com",
 					UnixTimestamp: 1640826609,
@@ -104,6 +105,7 @@ func TestGetCommits(t *testing.T) {
 					Action:        models.ActionNone,
 					Tags:          nil,
 					ExtraInfo:     "(origin/better-tests)",
+					Refs:          []models.CommitRef{{Kind: models.CommitRefRemoteBranch, Name: "origin/better-tests"}},
 					AuthorName:    "Jesse Duffield",
 					AuthorEmail:   "jessedduffield@gmail.com",
 					UnixTimestamp: 1640824515,
@@ -118,6 +120,7 @@ func TestGetCommits(t *testing.T) {
 					Action:        models.ActionNone,
 					Tags:          []string{"123", "456"},
 					ExtraInfo:     "(tag: 123, tag: 456)",
+					Refs:          []models.CommitRef{{Kind: models.CommitRefTag, Name: "123"}, {Kind: models.CommitRefTag, Name: "456"}},
 					AuthorName:    "Jesse Duffield",
 					AuthorEmail:   "jessedduffield@gmail.com",
 					UnixTimestamp: 1640823749,
@@ -207,7 +210,7 @@ func TestGetCommits(t *testing.T) {
 				// here it's seeing which commits are yet to be pushed
 				ExpectGitArgs([]string{"rev-list", "refs/heads/mybranch", "^mybranch@{u}"}, "0eea75e8c631fba6b58135697835d58ba4c18dbc\n", nil).
 				// here it's actually getting all the commits in a formatted form, one per line
-				ExpectGitArgs([]string{"log", "HEAD", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--abbrev=40", "--no-show-signature", "--"}, singleCommitOutput, nil).
+				ExpectGitArgs([]string{"log", "HEAD", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--decorate=full", "--abbrev=40", "--no-show-signature", "--"}, singleCommitOutput, nil).
 				// here it's testing which of the configured main branches exist; neither does
 				ExpectGitArgs([]string{"rev-parse", "--symbolic-full-name", "master@{u}"}, "", errors.New("error")).
 				ExpectGitArgs([]string{"rev-parse", "--verify", "--quiet", "refs/remotes/origin/master"}, "", errors.New("error")).
@@ -224,6 +227,7 @@ func TestGetCommits(t *testing.T) {
 					Action:        models.ActionNone,
 					Tags:          nil,
 					ExtraInfo:     "(HEAD -> better-tests)",
+					Refs:          []models.CommitRef{{Kind: models.CommitRefLocalBranch, Name: "better-tests", IsHead: true}},
 					AuthorName:    "Jesse Duffield",
 					AuthorEmail:   "jessedduffield@gmail.com",
 					UnixTimestamp: 1640826609,
@@ -243,7 +247,7 @@ func TestGetCommits(t *testing.T) {
 				// here it's seeing which commits are yet to be pushed
 				ExpectGitArgs([]string{"rev-list", "refs/heads/mybranch", "^mybranch@{u}", "^refs/remotes/origin/master", "^refs/remotes/origin/develop", "^refs/remotes/origin/1.0-hotfixes"}, "0eea75e8c631fba6b58135697835d58ba4c18dbc\n", nil).
 				// here it's actually getting all the commits in a formatted form, one per line
-				ExpectGitArgs([]string{"log", "HEAD", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--abbrev=40", "--no-show-signature", "--"}, singleCommitOutput, nil).
+				ExpectGitArgs([]string{"log", "HEAD", "--topo-order", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--decorate=full", "--abbrev=40", "--no-show-signature", "--"}, singleCommitOutput, nil).
 				// here it's testing which of the configured main branches exist
 				ExpectGitArgs([]string{"rev-parse", "--symbolic-full-name", "master@{u}"}, "refs/remotes/origin/master", nil).
 				ExpectGitArgs([]string{"rev-parse", "--symbolic-full-name", "main@{u}"}, "", errors.New("error")).
@@ -262,6 +266,7 @@ func TestGetCommits(t *testing.T) {
 					Action:        models.ActionNone,
 					Tags:          nil,
 					ExtraInfo:     "(HEAD -> better-tests)",
+					Refs:          []models.CommitRef{{Kind: models.CommitRefLocalBranch, Name: "better-tests", IsHead: true}},
 					AuthorName:    "Jesse Duffield",
 					AuthorEmail:   "jessedduffield@gmail.com",
 					UnixTimestamp: 1640826609,
@@ -278,7 +283,7 @@ func TestGetCommits(t *testing.T) {
 			opts:     GetCommitsOptions{RefName: "HEAD", RefForPushedStatus: &models.Branch{Name: "mybranch"}, IncludeRebaseCommits: false},
 			runner: oscommands.NewFakeRunner(t).
 				ExpectGitArgs([]string{"rev-list", "refs/heads/mybranch", "^mybranch@{u}"}, "", nil).
-				ExpectGitArgs([]string{"log", "HEAD", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--abbrev=40", "--no-show-signature", "--"}, "", nil),
+				ExpectGitArgs([]string{"log", "HEAD", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--decorate=full", "--abbrev=40", "--no-show-signature", "--"}, "", nil),
 
 			expectedCommitOpts: []models.NewCommitOpts{},
 			expectedError:      nil,
@@ -289,7 +294,7 @@ func TestGetCommits(t *testing.T) {
 			opts:     GetCommitsOptions{RefName: "HEAD", RefForPushedStatus: &models.Branch{Name: "mybranch"}, FilterPath: "src"},
 			runner: oscommands.NewFakeRunner(t).
 				ExpectGitArgs([]string{"rev-list", "refs/heads/mybranch", "^mybranch@{u}"}, "", nil).
-				ExpectGitArgs([]string{"log", "HEAD", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--abbrev=40", "--follow", "--name-status", "--no-show-signature", "--", "src"}, "", nil),
+				ExpectGitArgs([]string{"log", "HEAD", "--oneline", "--pretty=format:+%H%x00%at%x00%aN%x00%ae%x00%P%x00%m%x00%D%x00%s", "--decorate=full", "--abbrev=40", "--follow", "--name-status", "--no-show-signature", "--", "src"}, "", nil),
 
 			expectedCommitOpts: []models.NewCommitOpts{},
 			expectedError:      nil,
@@ -713,13 +718,14 @@ func TestCommitLoader_extractCommitFromLine(t *testing.T) {
 	}{
 		{
 			testName:       "normal commit line with all fields",
-			line:           "0eea75e8c631fba6b58135697835d58ba4c18dbc\x001640826609\x00Jesse Duffield\x00jessedduffield@gmail.com\x00b21997d6b4cbdf84b149\x00>\x00HEAD -> better-tests\x00better typing for rebase mode",
+			line:           "0eea75e8c631fba6b58135697835d58ba4c18dbc\x001640826609\x00Jesse Duffield\x00jessedduffield@gmail.com\x00b21997d6b4cbdf84b149\x00>\x00HEAD -> refs/heads/better-tests\x00better typing for rebase mode",
 			showDivergence: false,
 			expectedCommit: models.NewCommit(hashPool, models.NewCommitOpts{
 				Hash:          "0eea75e8c631fba6b58135697835d58ba4c18dbc",
 				Name:          "better typing for rebase mode",
 				Tags:          nil,
 				ExtraInfo:     "(HEAD -> better-tests)",
+				Refs:          []models.CommitRef{{Kind: models.CommitRefLocalBranch, Name: "better-tests", IsHead: true}},
 				UnixTimestamp: 1640826609,
 				AuthorName:    "Jesse Duffield",
 				AuthorEmail:   "jessedduffield@gmail.com",
@@ -729,13 +735,14 @@ func TestCommitLoader_extractCommitFromLine(t *testing.T) {
 		},
 		{
 			testName:       "normal commit line with left divergence",
-			line:           "hash123\x001234567890\x00John Doe\x00john@example.com\x00parent1 parent2\x00<\x00origin/main\x00commit message",
+			line:           "hash123\x001234567890\x00John Doe\x00john@example.com\x00parent1 parent2\x00<\x00refs/remotes/origin/main\x00commit message",
 			showDivergence: true,
 			expectedCommit: models.NewCommit(hashPool, models.NewCommitOpts{
 				Hash:          "hash123",
 				Name:          "commit message",
 				Tags:          nil,
 				ExtraInfo:     "(origin/main)",
+				Refs:          []models.CommitRef{{Kind: models.CommitRefRemoteBranch, Name: "origin/main"}},
 				UnixTimestamp: 1234567890,
 				AuthorName:    "John Doe",
 				AuthorEmail:   "john@example.com",
@@ -745,13 +752,14 @@ func TestCommitLoader_extractCommitFromLine(t *testing.T) {
 		},
 		{
 			testName:       "commit line with tags in extraInfo",
-			line:           "abc123\x001640000000\x00Jane Smith\x00jane@example.com\x00parenthash\x00>\x00tag: v1.0, tag: release\x00tagged release",
+			line:           "abc123\x001640000000\x00Jane Smith\x00jane@example.com\x00parenthash\x00>\x00tag: refs/tags/v1.0, tag: refs/tags/release\x00tagged release",
 			showDivergence: true,
 			expectedCommit: models.NewCommit(hashPool, models.NewCommitOpts{
 				Hash:          "abc123",
 				Name:          "tagged release",
 				Tags:          []string{"v1.0", "release"},
 				ExtraInfo:     "(tag: v1.0, tag: release)",
+				Refs:          []models.CommitRef{{Kind: models.CommitRefTag, Name: "v1.0"}, {Kind: models.CommitRefTag, Name: "release"}},
 				UnixTimestamp: 1640000000,
 				AuthorName:    "Jane Smith",
 				AuthorEmail:   "jane@example.com",
@@ -824,6 +832,7 @@ func TestCommitLoader_extractCommitFromLine(t *testing.T) {
 				Name:          "",
 				Tags:          nil,
 				ExtraInfo:     "(extraInfo)",
+				Refs:          []models.CommitRef{{Kind: models.CommitRefOther, Name: "extraInfo"}},
 				UnixTimestamp: 0,
 				AuthorName:    "author",
 				AuthorEmail:   "email",
@@ -856,6 +865,7 @@ func TestCommitLoader_extractCommitFromLine(t *testing.T) {
 				Name:          "message",
 				Tags:          nil,
 				ExtraInfo:     "(extraInfo)",
+				Refs:          []models.CommitRef{{Kind: models.CommitRefOther, Name: "extraInfo"}},
 				UnixTimestamp: 0,
 				AuthorName:    "author",
 				AuthorEmail:   "email",
