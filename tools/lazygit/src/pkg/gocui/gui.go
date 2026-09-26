@@ -1810,6 +1810,14 @@ func (g *Gui) onKey(ev *GocuiEvent) error {
 			}
 		}
 
+		if v.TextSelectable && ev.Key.KeyName() == MouseLeft {
+			if ev.Key.Mod()&ModMotion == 0 {
+				v.StartTextSelection(newX, newY)
+			} else if g.mouseCapture == v {
+				v.ExtendTextSelection(newX, newY)
+			}
+		}
+
 		// Only an actual click may activate tabs; a captured drag that
 		// crosses the tab row must not switch tabs.
 		if ev.Key.KeyName() == MouseLeft && ev.Key.Mod()&ModMotion == 0 && v.Frame && my == v.y0 {

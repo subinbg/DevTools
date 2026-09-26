@@ -259,8 +259,21 @@ func getMidSectionWeights(args WindowArrangementArgs) (int, int) {
 	}
 
 	if args.CurrentWindow == "main" || args.CurrentWindow == "secondary" {
-		if args.ScreenMode == types.SCREEN_HALF || args.ScreenMode == types.SCREEN_FULL {
+		if args.ScreenMode == types.SCREEN_FULL {
 			sideSectionWeight = 0
+		} else if args.ScreenMode == types.SCREEN_HALF {
+			if args.UserConfig.Gui.KeepSidePanelsWhenMainFocused {
+				// keep the half-screen split as it is when a side panel is
+				// focused, so that clicking a main panel doesn't rearrange the
+				// screen
+				if args.UserConfig.Gui.EnlargedSideViewLocation == "top" {
+					mainSectionWeight = sideSectionWeight * 2
+				} else {
+					mainSectionWeight = sideSectionWeight
+				}
+			} else {
+				sideSectionWeight = 0
+			}
 		}
 	} else {
 		if args.ScreenMode == types.SCREEN_HALF {

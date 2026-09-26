@@ -106,6 +106,10 @@ func (gui *Gui) createAllViews() error {
 	gui.Views.Search.Frame = false
 	gui.Views.Search.Editor = gocui.EditorFunc(gui.searchEditor)
 
+	for _, view := range []*gocui.View{gui.Views.Main, gui.Views.Secondary} {
+		view.TextSelectable = gui.c.UserConfig().Gui.MouseTextSelection
+	}
+
 	for _, view := range []*gocui.View{gui.Views.Main, gui.Views.Secondary, gui.Views.Staging, gui.Views.StagingSecondary, gui.Views.PatchBuilding, gui.Views.PatchBuildingSecondary, gui.Views.MergeConflicts} {
 		view.Wrap = true
 		view.UnderlineHyperLinksOnlyOnHover = true

@@ -150,6 +150,12 @@ type View struct {
 	// Overwrite enables or disables the overwrite mode of the view.
 	Overwrite bool
 
+	// TextSelectable lets the mouse select text in the view: pressing the
+	// left button starts a selection at the pointer, dragging extends it, and
+	// SelectedText returns it. Selected cells are drawn in reverse video.
+	TextSelectable bool
+	textSelection  *textSelection
+
 	// If Highlight is true, Sel{Bg,Fg}Colors will be used
 	// for the line under the cursor position.
 	Highlight bool
@@ -495,6 +501,103 @@ func (v *View) FocusPoint(cx int, cy int, scrollIntoView bool) {
 	v.cy = cy - v.oy
 }
 
+// textSelection is a stretch of text selected with the mouse, from the cell
+// the button was pressed on (the anchor) to the cell the pointer is on now,
+// both inclusive, in content coordinates: x is the column, y the index of the
+// view line (i.e. after wrapping).
+type textSelection struct {
+	anchorX, anchorY, endX, endY int
+}
+
+// StartTextSelection starts a text selection at the given content position,
+// replacing any previous one.
+func (v *View) StartTextSelection(x, y int) {
+	x, y = max(x, 0), max(y, 0)
+	v.textSelection = &textSelection{anchorX: x, anchorY: y, endX: x, endY: y}
+}
+
+// ExtendTextSelection moves the end of the text selection to the given
+// content position.
+func (v *View) ExtendTextSelection(x, y int) {
+	if v.textSelection == nil {
+		return
+	}
+	v.textSelection.endX = max(x, 0)
+	v.textSelection.endY = max(y, 0)
+}
+
+// HasTextSelection reports whether some text is selected, i.e. the selection
+// spans more than the cell it started on.
+func (v *View) HasTextSelection() bool {
+	s := v.textSelection
+	return s != nil && (s.anchorX != s.endX || s.anchorY != s.endY)
+}
+
+func (v *View) ClearTextSelection() {
+	v.textSelection = nil
+}
+
+// textSelectionBounds returns the selection's start and end in reading
+// order.
+func (v *View) textSelectionBounds() (x1, y1, x2, y2 int) {
+	s := v.textSelection
+	if s.anchorY < s.endY || (s.anchorY == s.endY && s.anchorX <= s.endX) {
+		return s.anchorX, s.anchorY, s.endX, s.endY
+	}
+	return s.endX, s.endY, s.anchorX, s.anchorY
+}
+
+func (v *View) inTextSelection(x, y int) bool {
+	if v.textSelection == nil {
+		return false
+	}
+	x1, y1, x2, y2 := v.textSelectionBounds()
+	if y < y1 || y > y2 {
+		return false
+	}
+	if y == y1 && x < x1 {
+		return false
+	}
+	if y == y2 && x > x2 {
+		return false
+	}
+	return true
+}
+
+// SelectedText returns the selected text. The segments of a wrapped line are
+// joined back together.
+func (v *View) SelectedText() string {
+	v.writeMutex.Lock()
+	defer v.writeMutex.Unlock()
+
+	if !v.HasTextSelection() {
+		return ""
+	}
+	v.refreshViewLinesIfNeeded()
+
+	x1, y1, x2, y2 := v.textSelectionBounds()
+	builder := strings.Builder{}
+	for y := y1; y <= y2 && y < len(v.viewLines); y++ {
+		vline := v.viewLines[y]
+		if y > y1 && vline.linesY != v.viewLines[y-1].linesY {
+			builder.WriteByte('\n')
+		}
+		x := 0
+		for _, c := range vline.line {
+			cellX := x
+			x += c.width
+			if y == y1 && cellX < x1 {
+				continue
+			}
+			if y == y2 && cellX > x2 {
+				break
+			}
+			builder.WriteString(c.chr)
+		}
+	}
+	return builder.String()
+}
+
 func (v *View) SetRangeSelectStart(rangeSelectStartY int) {
 	v.rangeSelectStartY = rangeSelectStartY
 }
@@ -734,6 +837,10 @@ func (v *View) setCharacter(x, y int, ch string, fgColor, bgColor Attribute, isW
 				bgColor = (bgColor & AttrStyleBits) | v.SelBgColor
 			}
 		}
+	}
+
+	if v.textSelection != nil && v.inTextSelection(x+v.ox, y+v.oy) {
+		fgColor |= AttrReverse
 	}
 
 	if matched, selected := v.isPatternMatchedRune(x, y); matched {
@@ -1292,6 +1399,7 @@ func (v *View) Reset() {
 
 	v.rewind()
 	v.buf.lines = nil
+	v.textSelection = nil
 	// As in clear(): abandon any in-progress off-screen render so writes after a
 	// reset go to the displayed buffer.
 	v.offscreen = nil

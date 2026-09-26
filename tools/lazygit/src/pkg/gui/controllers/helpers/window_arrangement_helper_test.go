@@ -472,6 +472,73 @@ func TestGetWindowDimensions(t *testing.T) {
 			`,
 		},
 		{
+			name: "half screen mode, main panel focused",
+			mutateArgs: func(args *WindowArrangementArgs) {
+				args.Height = 20
+				args.ScreenMode = types.SCREEN_HALF
+				args.CurrentWindow = "main"
+				args.UserConfig.Gui.EnlargedSideViewLocation = "left"
+			},
+			expected: `
+			╭main─────────────────────────────────────────────────────────────────────╮
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			│                                                                         │
+			╰─────────────────────────────────────────────────────────────────────────╯
+			<options──────────────────────────────────────────────────────>A<B────────>
+			A: statusSpacer1
+			B: information
+			`,
+		},
+		{
+			name: "half screen mode, main panel focused, side panels kept",
+			mutateArgs: func(args *WindowArrangementArgs) {
+				args.Height = 20
+				args.ScreenMode = types.SCREEN_HALF
+				args.CurrentWindow = "main"
+				args.UserConfig.Gui.EnlargedSideViewLocation = "left"
+				args.UserConfig.Gui.KeepSidePanelsWhenMainFocused = true
+			},
+			expected: `
+			╭status──────────────────────────────╮╭main───────────────────────────────╮
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			│                                    ││                                   │
+			╰────────────────────────────────────╯╰───────────────────────────────────╯
+			<options──────────────────────────────────────────────────────>A<B────────>
+			A: statusSpacer1
+			B: information
+			`,
+		},
+		{
 			name: "half screen mode, enlargedSideViewLocation top",
 			mutateArgs: func(args *WindowArrangementArgs) {
 				args.Height = 20 // smaller height because we don't need more here
