@@ -1,6 +1,8 @@
 package context
 
 import (
+	"fmt"
+
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/gui/filetree"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation"
@@ -35,6 +37,28 @@ func NewWorkingTreeContext(c *ContextCommon) *WorkingTreeContext {
 		})
 	}
 
+	// "Unstaged files (n)" / "Staged files (m)" headers, in the flat view only
+	// (a tree can't be split by status), and only when no status filter is on.
+	getNonModelItems := func() []*NonModelItem {
+		if !c.UserConfig().Gui.ShowStagingSectionsInFilesView ||
+			viewModel.InTreeMode() ||
+			viewModel.GetStatusFilter() != filetree.DisplayAll {
+			return nil
+		}
+		items := viewModel.GetAllItems()
+		if len(items) == 0 {
+			return nil
+		}
+		files := lo.FilterMap(items, func(item *filetree.FileNode, _ int) (*models.File, bool) {
+			return item.File, item.File != nil
+		})
+		unstaged, staged := presentation.StagingSectionSizes(files)
+		return []*NonModelItem{
+			{Index: 0, Content: formatListSectionHeader(fmt.Sprintf("%s (%d)", c.Tr.UnstagedFilesSectionHeader, unstaged))},
+			{Index: unstaged, Content: formatListSectionHeader(fmt.Sprintf("%s (%d)", c.Tr.StagedFilesSectionHeader, staged))},
+		}
+	}
+
 	ctx := &WorkingTreeContext{
 		FileTreeViewModel: viewModel,
 		ListContextTrait: &ListContextTrait{
@@ -48,6 +72,7 @@ func NewWorkingTreeContext(c *ContextCommon) *WorkingTreeContext {
 			ListRenderer: ListRenderer{
 				list:              viewModel,
 				getDisplayStrings: getDisplayStrings,
+				getNonModelItems:  getNonModelItems,
 			},
 			c: c,
 		},

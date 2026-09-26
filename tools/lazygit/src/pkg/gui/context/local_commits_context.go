@@ -17,6 +17,10 @@ import (
 	"github.com/samber/lo"
 )
 
+// Index of the graph column in a commit row (see presentation.displayCommit),
+// where the working tree row is rendered.
+const commitGraphColumn = 6
+
 type LocalCommitsContext struct {
 	*LocalCommitsViewModel
 	*ListContextTrait
@@ -128,6 +132,14 @@ func NewLocalCommitsContext(c *ContextCommon) *LocalCommitsContext {
 				Content: formatListSectionHeader(c.Tr.CommitsSectionHeader),
 			})
 		} else {
+			if c.UserConfig().Gui.ShowWorkingTreeInCommitsView && len(c.Model().Files) > 0 && len(c.Model().Commits) > 0 {
+				result = append(result, &NonModelItem{
+					Index:   0,
+					Content: presentation.FormatWorkingTreeRow(c.Model().Files, c.Tr),
+					Column:  commitGraphColumn,
+				})
+			}
+
 			result = addCommitDropIndicator(
 				result,
 				dropIndicator,

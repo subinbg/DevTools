@@ -8,6 +8,11 @@ func ApplyUpstreamDefaults(cfg *UserConfig) {
 	cfg.Gui.ShowRefLabelsInCommitsView = false
 	cfg.Git.Log.ShowWholeGraph = false
 
+	// files view
+	cfg.Gui.ShowStagingSectionsInFilesView = false
+	cfg.Gui.ShowFileTree = true
+	cfg.Gui.ShowWorkingTreeInCommitsView = false
+
 	// sidebar
 	cfg.Gui.GroupBranchesByPrefix = false
 	cfg.Gui.ShowBranchCommitHash = false

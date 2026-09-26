@@ -203,7 +203,7 @@ func (self *FileTree) SetTree() {
 	if self.showTree {
 		self.tree = BuildTreeFromFiles(filesForDisplay, showRootItem, cmp)
 	} else {
-		self.tree = BuildFlatTreeFromFiles(filesForDisplay, showRootItem, cmp)
+		self.tree = BuildFlatTreeFromFiles(filesForDisplay, showRootItem, cmp, guiConfig.ShowStagingSectionsInFilesView)
 	}
 }
 

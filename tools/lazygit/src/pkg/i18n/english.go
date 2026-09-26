@@ -378,6 +378,12 @@ type TranslationSet struct {
 	PendingCherryPicksSectionHeader       string
 	PendingRevertsSectionHeader           string
 	CommitsSectionHeader                  string
+	UnstagedFilesSectionHeader            string
+	StagedFilesSectionHeader              string
+	WorkInProgress                        string
+	LcStaged                              string
+	LcUnstaged                            string
+	LcUntracked                           string
 	MoveCommitsHere                       string
 	MovingCommitsHere                     string
 	YouDied                               string
@@ -1542,6 +1548,12 @@ func EnglishTranslationSet() *TranslationSet {
 		PendingCherryPicksSectionHeader:      "Pending cherry-picks",
 		PendingRevertsSectionHeader:          "Pending reverts",
 		CommitsSectionHeader:                 "Commits",
+		UnstagedFilesSectionHeader:           "Unstaged files",
+		StagedFilesSectionHeader:             "Staged files",
+		WorkInProgress:                       "WIP",
+		LcStaged:                             "staged",
+		LcUnstaged:                           "unstaged",
+		LcUntracked:                          "untracked",
 		MoveCommitsHere:                      "drop here",
 		MovingCommitsHere:                    "moving commits here",
 		YouDied:                              "YOU DIED!",

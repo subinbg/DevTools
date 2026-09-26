@@ -131,13 +131,15 @@ func BuildFlatTreeFromFiles(
 	files []*models.File,
 	showRootItem bool,
 	cmp func(a, b *Node[models.File]) int,
+	stagedLast bool,
 ) *Node[models.File] {
 	rootAux := BuildTreeFromFiles(files, showRootItem, cmp)
 	sortedFiles := rootAux.GetLeaves()
 
 	// from top down we have merge conflict files, then tracked file, then untracked
 	// files. This is the one way in which sorting differs between flat mode and
-	// tree mode
+	// tree mode. With stagedLast, files whose changes are all staged come after
+	// everything else, so the list splits into an unstaged and a staged section.
 	sort.SliceStable(sortedFiles, func(i, j int) bool {
 		iFile := sortedFiles[i].File
 		jFile := sortedFiles[j].File
@@ -153,6 +155,14 @@ func BuildFlatTreeFromFiles(
 
 		if jFile.HasMergeConflicts && !iFile.HasMergeConflicts {
 			return false
+		}
+
+		if stagedLast {
+			iUnstaged := iFile.HasUnstagedChanges || !iFile.HasStagedChanges
+			jUnstaged := jFile.HasUnstagedChanges || !jFile.HasStagedChanges
+			if iUnstaged != jUnstaged {
+				return iUnstaged
+			}
 		}
 
 		if iFile.Tracked && !jFile.Tracked {

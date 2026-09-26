@@ -191,6 +191,10 @@ type GuiConfig struct {
 	ShowRefLabelsInCommitsView bool `yaml:"showRefLabelsInCommitsView"`
 	// If true, branches whose names share a directory-like prefix (e.g. 'feature/') are listed together under a folder header in the branches views.
 	GroupBranchesByPrefix bool `yaml:"groupBranchesByPrefix"`
+	// If true, the flat (non-tree) files view lists files with unstaged changes first and fully staged files after, each under a section header with a count, GitKraken-style.
+	ShowStagingSectionsInFilesView bool `yaml:"showStagingSectionsInFilesView"`
+	// If true, a row summarising the working tree changes (staged, unstaged, untracked) is shown above the commits in the commits view, like GitKraken's WIP node.
+	ShowWorkingTreeInCommitsView bool `yaml:"showWorkingTreeInCommitsView"`
 	// Height of the command log view
 	CommandLogSize int `yaml:"commandLogSize" jsonschema:"minimum=0"`
 	// Whether to split the main window when viewing file changes.
@@ -905,7 +909,7 @@ func GetDefaultConfigForPlatform(platform string) *UserConfig {
 			ShowCommandLog:                      true,
 			ShowBottomLine:                      true,
 			ShowPanelJumps:                      true,
-			ShowFileTree:                        true,
+			ShowFileTree:                        false,
 			ShowRootItemInFileTree:              true,
 			FileTreeSortOrder:                   "mixed",
 			FileTreeSortCaseSensitive:           true,
@@ -921,6 +925,8 @@ func GetDefaultConfigForPlatform(platform string) *UserConfig {
 			ShowDivergenceFromBaseBranch:        "arrowAndNumber",
 			ShowRefLabelsInCommitsView:          true,
 			GroupBranchesByPrefix:               true,
+			ShowStagingSectionsInFilesView:      true,
+			ShowWorkingTreeInCommitsView:        true,
 			CommandLogSize:                      8,
 			SplitDiff:                           "auto",
 			SkipRewordInEditorWarning:           false,

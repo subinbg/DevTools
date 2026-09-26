@@ -454,7 +454,7 @@ func TestBuildFlatTreeFromFiles(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			result := BuildFlatTreeFromFiles(s.files, s.showRootItem, NodeSortComparator[models.File]("mixed", false))
+			result := BuildFlatTreeFromFiles(s.files, s.showRootItem, NodeSortComparator[models.File]("mixed", false), false)
 			assert.EqualValues(t, s.expected, result)
 		})
 	}

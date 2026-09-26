@@ -1239,6 +1239,14 @@ func (self *RefreshHelper) refreshFilesAndSubmodules(captured capturedFilesState
 	self.refreshView(self.c.Contexts().Submodules, env)
 	self.refreshView(self.c.Contexts().Files, env)
 
+	// The commits view summarises the working tree in its WIP row, so keep it
+	// in sync with the files.
+	if self.c.UserConfig().Gui.ShowWorkingTreeInCommitsView {
+		self.onUIThreadUnlessRepoChanged(env, func() {
+			self.c.Contexts().LocalCommits.HandleRender()
+		})
+	}
+
 	return nil
 }
 
