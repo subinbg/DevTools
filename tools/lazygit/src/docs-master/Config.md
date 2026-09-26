@@ -99,16 +99,16 @@ gui:
   # want to pick a small number (e.g. 0.2) if you're using a narrow screen, so
   # that you can see more of the main section.
   # Number from 0 to 1.0.
-  sidePanelWidth: 0.3333
+  sidePanelWidth: 0.4
 
   # If true, increase the height of the focused side window; creating an accordion
   # effect.
-  expandFocusedSidePanel: false
+  expandFocusedSidePanel: true
 
   # The weight of the expanded side panel, relative to the other panels. 2 means
   # twice as tall as the other panels. Only relevant if `expandFocusedSidePanel`
   # is true.
-  expandedSidePanelWeight: 2
+  expandedSidePanelWeight: 3
 
   # If true, don't give a side panel more height than it needs to show its
   # content; when all panels fit, the leftover height is shared among them so that
@@ -125,8 +125,8 @@ gui:
   # 'commits' must always be included; they can't be hidden.
   sidePanels:
     - [status]
-    - [files, worktrees, submodules]
-    - [branches, remotes, tags]
+    - [files, submodules]
+    - [branches, remotes, tags, worktrees]
     - [commits, reflog]
     - [stash]
 
@@ -286,11 +286,11 @@ gui:
   commitHashLength: 8
 
   # If true, show commit hashes alongside branch names in the branches view.
-  showBranchCommitHash: false
+  showBranchCommitHash: true
 
   # Whether to show the divergence from the base branch in the branches view.
   # One of: 'none' | 'onlyArrow'  | 'arrowAndNumber'
-  showDivergenceFromBaseBranch: none
+  showDivergenceFromBaseBranch: arrowAndNumber
 
   # If true, the branches, remote branches and tags pointing at a commit are shown
   # as colored labels next to it in the commits view, GitKraken-style. If false,
