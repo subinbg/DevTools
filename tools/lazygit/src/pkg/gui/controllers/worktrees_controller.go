@@ -1,0 +1,197 @@
+package controllers
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/jesseduffield/lazygit/pkg/commands/models"
+	"github.com/jesseduffield/lazygit/pkg/gui/context"
+	"github.com/jesseduffield/lazygit/pkg/gui/style"
+	"github.com/jesseduffield/lazygit/pkg/gui/types"
+	"github.com/jesseduffield/lazygit/pkg/utils"
+	"github.com/samber/lo"
+)
+
+type WorktreesController struct {
+	baseController
+	*ListControllerTrait[*models.Worktree]
+	c *ControllerCommon
+}
+
+var _ types.IController = &WorktreesController{}
+
+func NewWorktreesController(
+	c *ControllerCommon,
+) *WorktreesController {
+	return &WorktreesController{
+		baseController: baseController{},
+		ListControllerTrait: NewListControllerTrait(
+			c,
+			c.Contexts().Worktrees,
+			c.Contexts().Worktrees.GetSelected,
+			c.Contexts().Worktrees.GetSelectedItems,
+		),
+		c: c,
+	}
+}
+
+func (self *WorktreesController) GetKeybindings(opts types.KeybindingsOpts) []*types.Binding {
+	bindings := []*types.Binding{
+		{
+			Keys:            opts.GetKeys(opts.Config.Universal.New),
+			Handler:         self.add,
+			Description:     self.c.Tr.NewWorktree,
+			DisplayOnScreen: true,
+		},
+		{
+			Keys:              opts.GetKeys(opts.Config.Universal.Select),
+			Handler:           self.withItem(self.enter),
+			GetDisabledReason: self.require(self.singleItemSelected()),
+			Description:       self.c.Tr.Switch,
+			Tooltip:           self.c.Tr.SwitchToWorktreeTooltip,
+			DisplayOnScreen:   true,
+		},
+		{
+			Keys:              opts.GetKeys(opts.Config.Universal.GoInto),
+			Handler:           self.withItem(self.enter),
+			GetDisabledReason: self.require(self.singleItemSelected()),
+		},
+		{
+			Keys:              opts.GetKeys(opts.Config.Universal.OpenFile),
+			Handler:           self.withItem(self.open),
+			GetDisabledReason: self.require(self.singleItemSelected()),
+			Description:       self.c.Tr.OpenInEditor,
+		},
+		{
+			Keys:              opts.GetKeys(opts.Config.Universal.Remove),
+			Handler:           self.withItem(self.remove),
+			GetDisabledReason: self.require(self.singleItemSelected()),
+			Description:       self.c.Tr.Remove,
+			Tooltip:           self.c.Tr.RemoveWorktreeTooltip,
+			DisplayOnScreen:   true,
+		},
+	}
+
+	return bindings
+}
+
+func (self *WorktreesController) GetOnRenderToMain() func() {
+	return func() {
+		var task types.UpdateTask
+		worktree := self.context().GetSelected()
+		if worktree == nil {
+			task = types.NewRenderStringTask(self.c.Tr.NoWorktreesThisRepo)
+		} else {
+			main := ""
+			if worktree.IsMain {
+				main = style.FgDefault.Sprintf(" %s", self.c.Tr.MainWorktree)
+			}
+
+			missing := ""
+			if worktree.IsPathMissing {
+				missing = style.FgRed.Sprintf(" %s", self.c.Tr.MissingWorktree)
+			}
+
+			var builder strings.Builder
+			w := tabwriter.NewWriter(&builder, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintf(w, "%s:\t%s%s\n", self.c.Tr.Name, style.FgGreen.Sprint(worktree.Name), main)
+			branch := style.FgYellow.Sprint(worktree.Branch)
+			if worktree.Branch == "" && worktree.Head != "" {
+				branch = style.FgYellow.Sprintf("HEAD detached at %s", utils.ShortHash(worktree.Head))
+			}
+			_, _ = fmt.Fprintf(w, "%s:\t%s\n", self.c.Tr.Branch, branch)
+			_, _ = fmt.Fprintf(w, "%s:\t%s%s\n", self.c.Tr.Path, style.FgCyan.Sprint(worktree.Path), missing)
+			_ = w.Flush()
+
+			task = types.NewRenderStringTask(builder.String())
+		}
+
+		self.c.RenderToMainViews(types.RefreshMainOpts{
+			Pair: self.c.MainViewPairs().Normal,
+			Main: &types.ViewUpdateOpts{
+				Title: self.c.Tr.WorktreeTitle,
+				Task:  task,
+			},
+		})
+	}
+}
+
+func (self *WorktreesController) add() error {
+	return self.c.Helpers().Worktree.NewWorktree()
+}
+
+func (self *WorktreesController) remove(worktree *models.Worktree) error {
+	if worktree.IsMain {
+		return errors.New(self.c.Tr.CantDeleteMainWorktree)
+	}
+
+	if worktree.IsCurrent {
+		return errors.New(self.c.Tr.CantDeleteCurrentWorktree)
+	}
+
+	removeWorktreeItem := &types.MenuItem{
+		Label: self.c.Tr.RemoveWorktree,
+		Keys:  menuKey('w'),
+		OnPress: func() error {
+			return self.c.Helpers().Worktree.Remove(worktree, nil)
+		},
+	}
+
+	branch, branchFound := lo.Find(self.c.Model().Branches, func(branch *models.Branch) bool {
+		return branch.Name == worktree.Branch
+	})
+	// A worktree with a detached HEAD has no branch to delete
+	detachedReason := &types.DisabledReason{Text: self.c.Tr.WorktreeNotCheckedOutOnBranch}
+
+	removeWorktreeAndBranchItem := &types.MenuItem{
+		Label: self.c.Tr.RemoveWorktreeAndDeleteBranch,
+		Keys:  menuKey('b'),
+		OnPress: func() error {
+			return self.c.Helpers().BranchesHelper.RemoveWorktreeAndDeleteBranch(worktree, branch)
+		},
+	}
+	if !branchFound {
+		removeWorktreeAndBranchItem.DisabledReason = detachedReason
+	}
+
+	removeWorktreeAndBothBranchesItem := &types.MenuItem{
+		Label: self.c.Tr.RemoveWorktreeAndDeleteBothBranches,
+		Keys:  menuKey('r'),
+		OnPress: func() error {
+			return self.c.Helpers().BranchesHelper.RemoveWorktreeAndDeleteBothBranches(worktree, branch)
+		},
+	}
+	if !branchFound {
+		removeWorktreeAndBothBranchesItem.DisabledReason = detachedReason
+	} else if !branch.IsTrackingRemote() || branch.UpstreamGone {
+		removeWorktreeAndBothBranchesItem.DisabledReason = &types.DisabledReason{
+			Text: self.c.Tr.UpstreamNotSetError,
+		}
+	}
+
+	return self.c.Menu(types.CreateMenuOptions{
+		Title: utils.ResolvePlaceholderString(
+			self.c.Tr.RemoveWorktreeMenuTitle,
+			map[string]string{"worktreeName": worktree.Name},
+		),
+		Items: []*types.MenuItem{removeWorktreeItem, removeWorktreeAndBranchItem, removeWorktreeAndBothBranchesItem},
+	})
+}
+
+func (self *WorktreesController) GetOnDoubleClick() func() error {
+	return self.withItemGraceful(self.enter)
+}
+
+func (self *WorktreesController) enter(worktree *models.Worktree) error {
+	return self.c.Helpers().Worktree.Switch(worktree, context.WORKTREES_CONTEXT_KEY)
+}
+
+func (self *WorktreesController) open(worktree *models.Worktree) error {
+	return self.c.Helpers().Files.OpenDirInEditor(worktree.Path)
+}
+
+func (self *WorktreesController) context() *context.WorktreesContext {
+	return self.c.Contexts().Worktrees
+}
