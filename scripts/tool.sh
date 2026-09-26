@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Manage upstream tools vendored into this monorepo with `git subtree --squash`.
+#
+#   scripts/tool.sh add     <tool>            import upstream at the ref pinned in tools/<tool>/tool.env
+#   scripts/tool.sh update  <tool> <ref>      pull a newer upstream ref, merging it with local changes
+#   scripts/tool.sh pin     <tool> <ref>      only record <ref> in tool.env (after a manual merge)
+#   scripts/tool.sh diff    <tool>            show local modifications relative to pristine upstream
+#   scripts/tool.sh status  [tool...]         pinned ref vs latest upstream tag
+#   scripts/tool.sh release <tool> [suffix]   tag <tool>-<ref>[-suffix], push it -> CI publishes a Release
+#
+# A tool lives in tools/<tool>/: tool.env (UPSTREAM_REPO, UPSTREAM_REF), build.sh, src/ (subtree).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() { sed -n '2,11p' "$0" >&2; exit 1; }
+
+load() {
+  TOOL="${1:?tool name required}"
+  ENV_FILE="$ROOT/tools/$TOOL/tool.env"
+  [[ -f "$ENV_FILE" ]] || { echo "unknown tool '$TOOL' ($ENV_FILE missing)" >&2; exit 1; }
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  : "${UPSTREAM_REPO:?missing in $ENV_FILE}" "${UPSTREAM_REF:?missing in $ENV_FILE}"
+  PREFIX="tools/$TOOL/src"
+}
+
+require_clean() {
+  if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]]; then
+    echo "working tree is not clean; commit or stash first (git subtree needs a clean tree)" >&2
+    exit 1
+  fi
+}
+
+write_ref() {
+  local tmp; tmp="$(mktemp)"
+  sed "s|^UPSTREAM_REF=.*|UPSTREAM_REF=$1|" "$ENV_FILE" >"$tmp" && mv "$tmp" "$ENV_FILE"
+}
+
+# Latest squash commit for this prefix; its tree is the pristine upstream tree.
+upstream_squash() {
+  git -C "$ROOT" log --format=%H --grep="^git-subtree-dir: $PREFIX\$" -1
+}
+
+cmd_add() {
+  load "$1"; require_clean
+  [[ -e "$ROOT/$PREFIX" ]] && { echo "$PREFIX already exists; use 'update'" >&2; exit 1; }
+  git -C "$ROOT" subtree add --prefix="$PREFIX" --squash \
+    -m "Import $TOOL $UPSTREAM_REF" "$UPSTREAM_REPO" "$UPSTREAM_REF"
+}
+
+cmd_pin() {
+  load "$1"; local ref="${2:?new ref required}"
+  write_ref "$ref"
+  git -C "$ROOT" add "$ENV_FILE"
+  git -C "$ROOT" commit -q -m "Pin $TOOL $ref" -- "$ENV_FILE"
+  echo "$TOOL pinned to $ref"
+}
+
+cmd_update() {
+  load "$1"; local ref="${2:?new ref required}"; require_clean
+  [[ -e "$ROOT/$PREFIX" ]] || { echo "$PREFIX missing; use 'add'" >&2; exit 1; }
+  if ! git -C "$ROOT" subtree pull --prefix="$PREFIX" --squash \
+      -m "Update $TOOL $UPSTREAM_REF to $ref" "$UPSTREAM_REPO" "$ref"; then
+    cat >&2 <<MSG
+
+Merge stopped (most likely conflicts between your changes and upstream).
+Resolve them under $PREFIX, then:
+  git add -A $PREFIX && git commit
+  scripts/tool.sh pin $TOOL $ref
+MSG
+    exit 1
+  fi
+  cmd_pin "$TOOL" "$ref"
+}
+
+cmd_diff() {
+  load "$1"
+  local squash; squash="$(upstream_squash)"
+  [[ -n "$squash" ]] || { echo "no subtree squash commit found for $PREFIX" >&2; exit 1; }
+  # Compare the pristine upstream tree with the tree at HEAD under the prefix.
+  git -C "$ROOT" diff --stat=120 "$squash" "HEAD:$PREFIX" --
+  git -C "$ROOT" diff "$squash" "HEAD:$PREFIX" -- | cat
+}
+
+cmd_status() {
+  local tools=("$@")
+  if [[ ${#tools[@]} -eq 0 ]]; then
+    for d in "$ROOT"/tools/*/; do tools+=("$(basename "$d")"); done
+  fi
+  printf '%-10s %-10s %-10s %s\n' TOOL PINNED LATEST IMPORTED
+  for t in "${tools[@]}"; do
+    load "$t"
+    local latest imported
+    latest="$(git ls-remote --tags --refs "$UPSTREAM_REPO" 2>/dev/null \
+      | awk -F/ '{print $NF}' | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+    imported=no; [[ -e "$ROOT/$PREFIX" ]] && imported=yes
+    printf '%-10s %-10s %-10s %s\n' "$t" "$UPSTREAM_REF" "${latest:-?}" "$imported"
+  done
+}
+
+cmd_release() {
+  load "$1"; local suffix="${2:-}"
+  local tag="$TOOL-$UPSTREAM_REF${suffix:+-$suffix}"
+  git -C "$ROOT" tag -a "$tag" -m "$tag"
+  git -C "$ROOT" push origin "$tag"
+  echo "pushed tag $tag; the '$TOOL' workflow will attach the Linux x64 binary to a GitHub Release"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  add|update|pin|diff|status|release) "cmd_$cmd" "$@" ;;
+  *) usage ;;
+esac
