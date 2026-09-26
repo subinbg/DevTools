@@ -8,6 +8,11 @@ func ApplyUpstreamDefaults(cfg *UserConfig) {
 	cfg.Gui.ShowRefLabelsInCommitsView = false
 	cfg.Git.Log.ShowWholeGraph = false
 
+	// main panel
+	cfg.Gui.StatusPanelView = "dashboard"
+	cfg.Git.BranchLogCmd = "git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --"
+	cfg.Git.AllBranchesLogCmds = []string{"git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium"}
+
 	// files view
 	cfg.Gui.ShowStagingSectionsInFilesView = false
 	cfg.Gui.ShowFileTree = true

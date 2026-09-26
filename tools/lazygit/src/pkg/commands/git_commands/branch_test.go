@@ -234,7 +234,7 @@ func TestBranchGetBranchGraph(t *testing.T) {
 	runner := oscommands.NewFakeRunner(t).ExpectGitArgs([]string{
 		"log", "--graph", "--color=always", "--abbrev-commit", "--decorate", "--date=relative", "--pretty=medium", "test", "--",
 	}, "", nil)
-	instance := buildBranchCommands(commonDeps{runner: runner})
+	instance := buildBranchCommands(commonDeps{runner: runner, userConfig: upstreamDefaultConfig()})
 	_, err := instance.GetGraph("test")
 	assert.NoError(t, err)
 }
@@ -243,7 +243,7 @@ func TestBranchGetAllBranchGraph(t *testing.T) {
 	runner := oscommands.NewFakeRunner(t).ExpectGitArgs([]string{
 		"log", "--graph", "--all", "--color=always", "--abbrev-commit", "--decorate", "--date=relative", "--pretty=medium",
 	}, "", nil)
-	instance := buildBranchCommands(commonDeps{runner: runner})
+	instance := buildBranchCommands(commonDeps{runner: runner, userConfig: upstreamDefaultConfig()})
 	err := instance.AllBranchesLogCmdObj().Run()
 	assert.NoError(t, err)
 }
@@ -316,4 +316,11 @@ func TestBranchCurrentBranchInfo(t *testing.T) {
 			s.runner.CheckForMissingCalls()
 		})
 	}
+}
+
+// The log command expectations above are upstream's defaults.
+func upstreamDefaultConfig() *config.UserConfig {
+	cfg := config.GetDefaultConfig()
+	config.ApplyUpstreamDefaults(cfg)
+	return cfg
 }

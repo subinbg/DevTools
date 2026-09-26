@@ -365,7 +365,7 @@ gui:
 
   # Status panel view.
   # One of 'dashboard' (default) | 'allBranchesLog'
-  statusPanelView: dashboard
+  statusPanelView: allBranchesLog
 
   # If true, jump to the Files panel after popping a stash
   switchToFilesAfterStashPop: true
@@ -476,12 +476,13 @@ git:
   autoStageResolvedConflicts: true
 
   # Command used when displaying the current branch git log in the main window
-  branchLogCmd: git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --
+  branchLogCmd: git log --graph --color=always --abbrev-commit --date=relative --pretty=format:'%C(bold yellow)%h%C(reset)%C(auto)%d%C(reset) %s %C(dim white)· %an, %ad%C(reset)' {{branchName}} --
 
   # Commands used to display git log of all branches in the main window, they will
   # be cycled in order of appearance (array of strings)
   allBranchesLogCmds:
-    - git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium
+    - git log --graph --exclude=refs/stash --all --color=always --abbrev-commit --date=relative --pretty=format:'%C(bold yellow)%h%C(reset)%C(auto)%d%C(reset) %s %C(dim white)· %an, %ad%C(reset)'
+    - git log --graph --exclude=refs/stash --all --color=always --abbrev-commit --date=format:'%Y-%m-%d %H:%M' --pretty=format:'%C(bold yellow)%h%C(reset) %C(cyan)%ad%C(reset)%C(auto)%d%C(reset) %s %C(dim white)· %an%C(reset)'
 
   # If true, git diffs are rendered with the `--ignore-all-space` flag, which
   # ignores whitespace changes. Can be toggled from within Lazygit with

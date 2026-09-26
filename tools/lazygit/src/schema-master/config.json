@@ -430,7 +430,7 @@
         "branchLogCmd": {
           "type": "string",
           "description": "Command used when displaying the current branch git log in the main window",
-          "default": "git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --"
+          "default": "git log --graph --color=always --abbrev-commit --date=relative --pretty=format:'%C(bold yellow)%h%C(reset)%C(auto)%d%C(reset) %s %C(dim white)· %an, %ad%C(reset)' {{branchName}} --"
         },
         "allBranchesLogCmds": {
           "items": {
@@ -439,7 +439,8 @@
           "type": "array",
           "description": "Commands used to display git log of all branches in the main window, they will be cycled in order of appearance (array of strings)",
           "default": [
-            "git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium"
+            "git log --graph --exclude=refs/stash --all --color=always --abbrev-commit --date=relative --pretty=format:'%C(bold yellow)%h%C(reset)%C(auto)%d%C(reset) %s %C(dim white)· %an, %ad%C(reset)'",
+            "git log --graph --exclude=refs/stash --all --color=always --abbrev-commit --date=format:'%Y-%m-%d %H:%M' --pretty=format:'%C(bold yellow)%h%C(reset) %C(cyan)%ad%C(reset)%C(auto)%d%C(reset) %s %C(dim white)· %an%C(reset)'"
           ]
         },
         "ignoreWhitespaceInDiffView": {
@@ -929,7 +930,7 @@
             "allBranchesLog"
           ],
           "description": "Status panel view.\nOne of 'dashboard' (default) | 'allBranchesLog'",
-          "default": "dashboard"
+          "default": "allBranchesLog"
         },
         "switchToFilesAfterStashPop": {
           "type": "boolean",
