@@ -92,8 +92,8 @@ func TestGetCommitListDisplayStringsRefLabels(t *testing.T) {
 			},
 			showGraph: true,
 			expected: formatExpected(`
-		hash1 ○  ✓ main  commit1
-		hash2 ○  v1  commit2
+		hash1 ●  ✓ main  commit1
+		hash2 ●  v1  commit2
 						`),
 		},
 	}
@@ -130,6 +130,7 @@ func TestGetCommitListDisplayStringsRefLabels(t *testing.T) {
 				len(commits),
 				s.showGraph,
 				git_commands.NewNullBisectInfo(),
+				CommitListOpts{},
 			)
 
 			renderedLines, _ := utils.RenderDisplayStrings(result, nil)

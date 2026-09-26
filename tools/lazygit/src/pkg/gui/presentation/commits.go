@@ -13,6 +13,7 @@ import (
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/authors"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/graph"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/icons"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/lanegraph"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/palette"
 	"github.com/jesseduffield/lazygit/pkg/gui/style"
 	"github.com/jesseduffield/lazygit/pkg/theme"
@@ -29,9 +30,24 @@ type pipeSetCacheKey struct {
 	divergence  models.Divergence
 }
 
+type laneGraphCacheKey struct {
+	pipeSetCacheKey
+	workingTreeRow bool
+}
+
+// laneGraphCacheEntry is a built lanes-style graph plus the data derived from
+// it that renders reuse.
+type laneGraphCacheEntry struct {
+	graph      *lanegraph.Graph
+	laneStyles map[string]*style.TextStyle
+	// whether the lane styles have been published to the registries below
+	published bool
+}
+
 var (
 	pipeSetCache   = make(map[pipeSetCacheKey][][]graph.Pipe)
 	laneStyleCache = make(map[pipeSetCacheKey]map[string]*style.TextStyle)
+	laneGraphCache = make(map[laneGraphCacheKey]*laneGraphCacheEntry)
 	mutex          deadlock.Mutex
 
 	// lane styles of every commit in the loaded graph(s), by commit hash and
@@ -43,6 +59,19 @@ var (
 	laneStyleRegistryMutex deadlock.RWMutex
 )
 
+// CommitListOpts holds this fork's options for GetCommitListDisplayStrings.
+type CommitListOpts struct {
+	// The list shows a working-tree row above the commits (see
+	// FormatWorkingTreeRow), which the lanes graph draws as a dotted node
+	// connected to the HEAD commit. Only meaningful for the local commits
+	// list, when not rebasing.
+	WorkingTreeRow bool
+	// Publish the lane colors of the commits and of the refs pointing at them
+	// for the other panels (branches, remotes, status). Only the main commits
+	// panel should do this, so that a branch keeps one color everywhere.
+	PublishLaneStyles bool
+}
+
 func laneStyleForCommit(hash string) *style.TextStyle {
 	laneStyleRegistryMutex.RLock()
 	defer laneStyleRegistryMutex.RUnlock()
@@ -53,6 +82,19 @@ func laneStyleForRef(name string) *style.TextStyle {
 	laneStyleRegistryMutex.RLock()
 	defer laneStyleRegistryMutex.RUnlock()
 	return refLaneStyleRegistry[name]
+}
+
+func publishLaneStyles(commits []*models.Commit, laneStyles map[string]*style.TextStyle) {
+	laneStyleRegistryMutex.Lock()
+	defer laneStyleRegistryMutex.Unlock()
+	maps.Copy(laneStyleRegistry, laneStyles)
+	for _, commit := range commits {
+		if laneStyle, ok := laneStyles[commit.Hash()]; ok {
+			for _, ref := range commit.Refs {
+				refLaneStyleRegistry[ref.Name] = laneStyle
+			}
+		}
+	}
 }
 
 type bisectBounds struct {
@@ -80,6 +122,7 @@ func GetCommitListDisplayStrings(
 	endIdx int,
 	showGraph bool,
 	bisectInfo *git_commands.BisectInfo,
+	opts CommitListOpts,
 ) [][]string {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -115,41 +158,24 @@ func GetCommitListDisplayStrings(
 				localSectionStart = len(commits)
 			}
 
+			sectionOpts := opts
+			sectionOpts.WorkingTreeRow = false
 			if localSectionStart > 0 {
 				// we have some remote commits
-				pipeSets, sectionLaneStyles := loadPipesets(commits[:localSectionStart])
+				start := startIdx
+				end := min(endIdx, localSectionStart)
+				graphLines, sectionLaneStyles := renderGraph(common, commits[:localSectionStart], start, end, selectedCommitHashPtr, sectionOpts)
 				maps.Copy(laneStyles, sectionLaneStyles)
-				if startIdx < localSectionStart {
-					// some of the remote commits are visible
-					start := startIdx
-					end := min(endIdx, localSectionStart)
-					graphPipeSets := pipeSets[start:end]
-					graphCommits := commits[start:end]
-					graphLines := graph.RenderAux(
-						graphPipeSets,
-						graphCommits,
-						selectedCommitHashPtr,
-					)
-					allGraphLines = append(allGraphLines, graphLines...)
-				}
+				// (no lines when none of the remote commits are visible)
+				allGraphLines = append(allGraphLines, graphLines...)
 			}
 			if localSectionStart < len(commits) {
 				// we have some local commits
-				pipeSets, sectionLaneStyles := loadPipesets(commits[localSectionStart:])
+				start := max(startIdx-localSectionStart, 0)
+				end := max(endIdx-localSectionStart, 0)
+				graphLines, sectionLaneStyles := renderGraph(common, commits[localSectionStart:], start, end, selectedCommitHashPtr, sectionOpts)
 				maps.Copy(laneStyles, sectionLaneStyles)
-				if localSectionStart < endIdx {
-					// some of the local commits are visible
-					graphOffset := max(startIdx, localSectionStart)
-					pipeSetOffset := max(startIdx-localSectionStart, 0)
-					graphPipeSets := pipeSets[pipeSetOffset : endIdx-localSectionStart]
-					graphCommits := commits[graphOffset:endIdx]
-					graphLines := graph.RenderAux(
-						graphPipeSets,
-						graphCommits,
-						selectedCommitHashPtr,
-					)
-					allGraphLines = append(allGraphLines, graphLines...)
-				}
+				allGraphLines = append(allGraphLines, graphLines...)
 			}
 
 			getGraphLine = func(idx int) string {
@@ -160,16 +186,15 @@ func GetCommitListDisplayStrings(
 			// but we'll never include TODO commits as part of the graph because it'll be messy)
 			graphOffset := max(startIdx, rebaseOffset)
 
-			pipeSets, graphLaneStyles := loadPipesets(commits[rebaseOffset:])
+			graphOpts := opts
+			if rebaseOffset > 0 {
+				// the working-tree row is not shown while rebasing
+				graphOpts.WorkingTreeRow = false
+			}
+			start := max(startIdx-rebaseOffset, 0)
+			end := max(endIdx-rebaseOffset, 0)
+			graphLines, graphLaneStyles := renderGraph(common, commits[rebaseOffset:], start, end, selectedCommitHashPtr, graphOpts)
 			laneStyles = graphLaneStyles
-			pipeSetOffset := max(startIdx-rebaseOffset, 0)
-			graphPipeSets := pipeSets[pipeSetOffset:max(endIdx-rebaseOffset, 0)]
-			graphCommits := commits[graphOffset:endIdx]
-			graphLines := graph.RenderAux(
-				graphPipeSets,
-				graphCommits,
-				selectedCommitHashPtr,
-			)
 			getGraphLine = func(idx int) string {
 				if idx >= graphOffset {
 					return graphLines[idx-graphOffset]
@@ -280,7 +305,104 @@ func indexOfFirstNonTODOCommit(commits []*models.Commit) int {
 	return 0
 }
 
-func loadPipesets(commits []*models.Commit) ([][]graph.Pipe, map[string]*style.TextStyle) {
+// renderGraph renders the graph lines of commits[start:end] in the configured
+// style (see LogConfig.GraphStyle), and returns them along with the lane
+// style of every commit in the graph. Both are derived from a cached layout
+// of the whole commit list. The caller must hold the mutex.
+func renderGraph(
+	common *common.Common,
+	commits []*models.Commit,
+	start int,
+	end int,
+	selectedCommitHashPtr *string,
+	opts CommitListOpts,
+) ([]string, map[string]*style.TextStyle) {
+	if len(commits) == 0 {
+		return nil, nil
+	}
+	start = lo.Clamp(start, 0, len(commits))
+	end = lo.Clamp(end, start, len(commits))
+
+	if common.UserConfig().Git.Log.GraphStyle == "classic" {
+		pipeSets, laneStyles := loadPipesets(commits, opts.PublishLaneStyles)
+		lines := graph.RenderAux(pipeSets[start:end], commits[start:end], selectedCommitHashPtr)
+		return lines, laneStyles
+	}
+
+	entry := loadLaneGraph(commits, opts)
+	width := entry.graph.Width()
+	lines := make([]string, 0, end-start)
+	for i := start; i < end; i++ {
+		lines = append(lines, entry.graph.RenderRow(entry.graph.RowIndexOfCommit(i), width))
+	}
+	return lines, entry.laneStyles
+}
+
+// WorkingTreeGraphRow returns the graph cells of the working-tree row shown
+// above the commits (a dotted node in the HEAD commit's lane), padded to the
+// width of the graph so that the text after it lines up with the commit
+// subjects. It's empty when the graph is hidden or not in the lanes style.
+func WorkingTreeGraphRow(common *common.Common, commits []*models.Commit, showGraph bool) string {
+	if !showGraph || len(commits) == 0 || common.UserConfig().Git.Log.GraphStyle == "classic" {
+		return ""
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	entry := loadLaneGraph(commits, CommitListOpts{WorkingTreeRow: true})
+	return entry.graph.RenderRow(0, entry.graph.Width())
+}
+
+// loadLaneGraph returns the cached lanes-style layout of the commits,
+// building it if needed. The caller must hold the mutex.
+func loadLaneGraph(commits []*models.Commit, opts CommitListOpts) *laneGraphCacheEntry {
+	cacheKey := laneGraphCacheKey{
+		pipeSetCacheKey: pipeSetCacheKey{
+			commitHash:  commits[0].Hash(),
+			commitCount: len(commits),
+			divergence:  commits[0].Divergence,
+		},
+		workingTreeRow: opts.WorkingTreeRow,
+	}
+
+	entry, ok := laneGraphCache[cacheKey]
+	if !ok {
+		// the cache only needs to hold the graphs of the lists currently on
+		// screen; anything older is just memory
+		if len(laneGraphCache) >= 8 {
+			laneGraphCache = make(map[laneGraphCacheKey]*laneGraphCacheEntry)
+		}
+		g := lanegraph.Build(commits, lanegraph.Options{
+			WorkingTree: opts.WorkingTreeRow,
+			HeadHash:    HeadCommitHash(commits),
+		})
+		entry = &laneGraphCacheEntry{graph: g, laneStyles: g.LaneStyles()}
+		laneGraphCache[cacheKey] = entry
+	}
+
+	if opts.PublishLaneStyles && !entry.published {
+		entry.published = true
+		publishLaneStyles(commits, entry.laneStyles)
+	}
+
+	return entry
+}
+
+// HeadCommitHash returns the hash of the commit HEAD points at, as told by
+// the refs decorating the commits, or "" if none of them is HEAD.
+func HeadCommitHash(commits []*models.Commit) string {
+	for _, commit := range commits {
+		for _, ref := range commit.Refs {
+			if ref.IsHead || ref.Kind == models.CommitRefDetachedHead {
+				return commit.Hash()
+			}
+		}
+	}
+	return ""
+}
+
+func loadPipesets(commits []*models.Commit, publish bool) ([][]graph.Pipe, map[string]*style.TextStyle) {
 	// given that our cache key is a commit hash and a commit count, it's very important that we don't actually try to render pipes
 	// when dealing with things like filtered commits.
 	cacheKey := pipeSetCacheKey{
@@ -305,16 +427,9 @@ func loadPipesets(commits []*models.Commit) ([][]graph.Pipe, map[string]*style.T
 		laneStyles = graph.CommitLaneStyles(pipeSets, commits)
 		laneStyleCache[cacheKey] = laneStyles
 
-		laneStyleRegistryMutex.Lock()
-		maps.Copy(laneStyleRegistry, laneStyles)
-		for _, commit := range commits {
-			if laneStyle, ok := laneStyles[commit.Hash()]; ok {
-				for _, ref := range commit.Refs {
-					refLaneStyleRegistry[ref.Name] = laneStyle
-				}
-			}
+		if publish {
+			publishLaneStyles(commits, laneStyles)
 		}
-		laneStyleRegistryMutex.Unlock()
 	}
 
 	return pipeSets, laneStyles

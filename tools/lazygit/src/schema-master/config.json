@@ -858,6 +858,35 @@
           "description": "If true, a row summarising the working tree changes (staged, unstaged, untracked) is shown above the commits in the commits view, like GitKraken's WIP node.",
           "default": true
         },
+        "mainViewCommitGraph": {
+          "type": "boolean",
+          "description": "If true, the log shown in the main panel for the status panel (all branches) and for the selected branch is drawn with lazygit's own commit graph, like the commits panel, instead of showing the output of `git log --graph`.",
+          "default": true
+        },
+        "prettyDiff": {
+          "type": "boolean",
+          "description": "If true, diffs in the main panel and in the staging panel are rendered with old/new line numbers, tinted backgrounds for added and removed lines and highlighted changed words. Has no effect when a custom pager (git.paging.pager) is configured.",
+          "default": true
+        },
+        "prettyDiffTheme": {
+          "type": "string",
+          "enum": [
+            "dark",
+            "light"
+          ],
+          "description": "Color scheme of the pretty diff tints. One of: 'dark' | 'light'",
+          "default": "dark"
+        },
+        "keepSidePanelsWhenMainFocused": {
+          "type": "boolean",
+          "description": "If true, focusing a main panel (by clicking it, or with the focusMainView key) while in half-screen mode keeps the side panels at their size instead of collapsing them; only full-screen mode gives the main panel the whole screen.",
+          "default": true
+        },
+        "mouseTextSelection": {
+          "type": "boolean",
+          "description": "If true, dragging with the left mouse button in a main panel selects text, and releasing the button copies the selection to the clipboard. Clicking without dragging keeps its usual meaning.",
+          "default": true
+        },
         "commandLogSize": {
           "type": "integer",
           "minimum": 0,
@@ -3504,7 +3533,7 @@
             "default"
           ],
           "description": "One of: 'date-order' | 'author-date-order' | 'topo-order' | 'default'\n'topo-order' makes it easier to read the git log graph, but commits may not appear chronologically. See https://git-scm.com/docs/\n\nCan be changed from within Lazygit with `Log menu -\u003e Commit sort order` (`\u003cctrl+l\u003e` in the commits window by default).",
-          "default": "topo-order"
+          "default": "date-order"
         },
         "showGraph": {
           "type": "string",
@@ -3520,6 +3549,15 @@
           "type": "boolean",
           "description": "displays the whole git graph by default in the commits view (equivalent to passing the `--all` argument to `git log`)",
           "default": true
+        },
+        "graphStyle": {
+          "type": "string",
+          "enum": [
+            "lanes",
+            "classic"
+          ],
+          "description": "One of: 'lanes' | 'classic'\n'lanes' draws the graph like GitKraken: each line of history keeps its column and color from its tip down to where it meets another line, merge lines curve into the line they merged, and the working tree shows as a dotted node above HEAD. 'classic' is upstream lazygit's graph, colored by author. 'lanes' reads best with order 'date-order'.",
+          "default": "lanes"
         }
       },
       "additionalProperties": false,

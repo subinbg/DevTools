@@ -311,6 +311,30 @@ gui:
   # WIP node.
   showWorkingTreeInCommitsView: true
 
+  # If true, the log shown in the main panel for the status panel (all branches)
+  # and for the selected branch is drawn with lazygit's own commit graph, like the
+  # commits panel, instead of showing the output of `git log --graph`.
+  mainViewCommitGraph: true
+
+  # If true, diffs in the main panel and in the staging panel are rendered with
+  # old/new line numbers, tinted backgrounds for added and removed lines and
+  # highlighted changed words. Has no effect when a custom pager
+  # (git.paging.pager) is configured.
+  prettyDiff: true
+
+  # Color scheme of the pretty diff tints. One of: 'dark' | 'light'
+  prettyDiffTheme: dark
+
+  # If true, focusing a main panel (by clicking it, or with the focusMainView key)
+  # while in half-screen mode keeps the side panels at their size instead of
+  # collapsing them; only full-screen mode gives the main panel the whole screen.
+  keepSidePanelsWhenMainFocused: true
+
+  # If true, dragging with the left mouse button in a main panel selects text, and
+  # releasing the button copies the selection to the clipboard. Clicking without
+  # dragging keeps its usual meaning.
+  mouseTextSelection: true
+
   # Height of the command log view
   commandLogSize: 8
 
@@ -529,7 +553,7 @@ git:
     #
     # Can be changed from within Lazygit with `Log menu -> Commit sort order`
     # (`<ctrl+l>` in the commits window by default).
-    order: topo-order
+    order: date-order
 
     # This determines whether the git graph is rendered in the commits panel
     # One of 'always' | 'never' | 'when-maximised'
@@ -541,6 +565,14 @@ git:
     # displays the whole git graph by default in the commits view (equivalent to
     # passing the `--all` argument to `git log`)
     showWholeGraph: true
+
+    # One of: 'lanes' | 'classic'
+    # 'lanes' draws the graph like GitKraken: each line of history keeps its column
+    # and color from its tip down to where it meets another line, merge lines curve
+    # into the line they merged, and the working tree shows as a dotted node above
+    # HEAD. 'classic' is upstream lazygit's graph, colored by author. 'lanes' reads
+    # best with order 'date-order'.
+    graphStyle: lanes
 
   # How branches are sorted in the local branches view.
   # One of: 'date' (default) | 'recency' | 'alphabetical'

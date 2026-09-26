@@ -16,10 +16,16 @@ func ApplyUpstreamDefaults(cfg *UserConfig) {
 	// commits view
 	cfg.Gui.ShowRefLabelsInCommitsView = false
 	cfg.Git.Log.ShowWholeGraph = false
+	cfg.Git.Log.Order = "topo-order"
+	cfg.Git.Log.GraphStyle = "classic"
 
 	// main panel
 	cfg.Git.CommitDetailsFormat = ""
 	cfg.Gui.StatusPanelView = "dashboard"
+	cfg.Gui.MainViewCommitGraph = false
+	cfg.Gui.PrettyDiff = false
+	cfg.Gui.KeepSidePanelsWhenMainFocused = false
+	cfg.Gui.MouseTextSelection = false
 	cfg.Git.BranchLogCmd = "git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --"
 	cfg.Git.AllBranchesLogCmds = []string{"git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium"}
 

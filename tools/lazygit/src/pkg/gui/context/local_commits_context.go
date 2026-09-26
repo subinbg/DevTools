@@ -79,6 +79,10 @@ func NewLocalCommitsContext(c *ContextCommon) *LocalCommitsContext {
 			endIdx,
 			shouldShowGraph(c),
 			c.Model().BisectInfo,
+			presentation.CommitListOpts{
+				WorkingTreeRow:    showWorkingTreeRow(c),
+				PublishLaneStyles: true,
+			},
 		)
 	}
 
@@ -132,11 +136,12 @@ func NewLocalCommitsContext(c *ContextCommon) *LocalCommitsContext {
 				Content: formatListSectionHeader(c.Tr.CommitsSectionHeader),
 			})
 		} else {
-			if c.UserConfig().Gui.ShowWorkingTreeInCommitsView && len(c.Model().Files) > 0 && len(c.Model().Commits) > 0 {
+			if showWorkingTreeRow(c) {
 				result = append(result, &NonModelItem{
-					Index:   0,
-					Content: presentation.FormatWorkingTreeRow(c.Model().Files, c.Tr),
-					Column:  commitGraphColumn,
+					Index: 0,
+					Content: presentation.WorkingTreeGraphRow(c.Common, c.Model().Commits, shouldShowGraph(c)) +
+						presentation.FormatWorkingTreeRow(c.Model().Files, c.Tr),
+					Column: commitGraphColumn,
 				})
 			}
 
@@ -334,6 +339,15 @@ func (self *LocalCommitsViewModel) GetShowWholeGitGraph() bool {
 
 func (self *LocalCommitsViewModel) GetCommits() []*models.Commit {
 	return self.getModel()
+}
+
+// showWorkingTreeRow reports whether the commits list shows the working-tree
+// row (see presentation.FormatWorkingTreeRow) above the commits.
+func showWorkingTreeRow(c *ContextCommon) bool {
+	return c.UserConfig().Gui.ShowWorkingTreeInCommitsView &&
+		len(c.Model().Files) > 0 &&
+		len(c.Model().Commits) > 0 &&
+		!c.Model().WorkingTreeStateAtLastCommitRefresh.CanShowTodos()
 }
 
 func shouldShowGraph(c *ContextCommon) bool {
