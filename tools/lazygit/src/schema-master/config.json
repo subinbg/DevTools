@@ -3498,7 +3498,7 @@
         "showWholeGraph": {
           "type": "boolean",
           "description": "displays the whole git graph by default in the commits view (equivalent to passing the `--all` argument to `git log`)",
-          "default": false
+          "default": true
         }
       },
       "additionalProperties": false,

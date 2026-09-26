@@ -952,7 +952,7 @@ func GetDefaultConfigForPlatform(platform string) *UserConfig {
 			Log: LogConfig{
 				Order:          "topo-order",
 				ShowGraph:      "always",
-				ShowWholeGraph: false,
+				ShowWholeGraph: true,
 			},
 			LocalBranchSortOrder:         "date",
 			RemoteBranchSortOrder:        "date",
