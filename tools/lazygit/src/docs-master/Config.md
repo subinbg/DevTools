@@ -292,6 +292,11 @@ gui:
   # One of: 'none' | 'onlyArrow'  | 'arrowAndNumber'
   showDivergenceFromBaseBranch: none
 
+  # If true, the branches, remote branches and tags pointing at a commit are shown
+  # as colored labels next to it in the commits view, GitKraken-style. If false,
+  # only tags and a '*' marker for branch heads are shown.
+  showRefLabelsInCommitsView: true
+
   # Height of the command log view
   commandLogSize: 8
 

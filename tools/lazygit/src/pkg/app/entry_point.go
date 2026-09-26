@@ -151,6 +151,10 @@ func Start(buildInfo *BuildInfo, integrationTest integrationTypes.IntegrationTes
 	}
 
 	if integrationTest != nil {
+		// The integration tests were written against upstream lazygit's
+		// defaults; run them on those so our changed defaults don't invalidate
+		// their expectations. A test can still opt in through SetupConfig.
+		config.ApplyUpstreamDefaults(appConfig.GetUserConfig())
 		integrationTest.SetupConfig(appConfig)
 		// Set this to true so that integration tests don't have to explicitly deal with the hunk
 		// staging hint:

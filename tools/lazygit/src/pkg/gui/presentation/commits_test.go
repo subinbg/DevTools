@@ -538,6 +538,8 @@ func TestGetCommitListDisplayStrings(t *testing.T) {
 	}
 
 	common := common.NewDummyCommon()
+	// these scenarios cover the classic rendering; ref labels are tested in ref_labels_test.go
+	common.UserConfig().Gui.ShowRefLabelsInCommitsView = false
 
 	for _, s := range scenarios {
 		if !focusing || s.focus {
@@ -551,6 +553,7 @@ func TestGetCommitListDisplayStrings(t *testing.T) {
 					common,
 					commits,
 					s.branches,
+					nil,
 					s.currentBranchName,
 					s.hasUpdateRefConfig,
 					s.fullDescription,

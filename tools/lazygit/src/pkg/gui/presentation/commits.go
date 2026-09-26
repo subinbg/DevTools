@@ -55,6 +55,7 @@ func GetCommitListDisplayStrings(
 	common *common.Common,
 	commits []*models.Commit,
 	branches []*models.Branch,
+	worktrees []*models.Worktree,
 	currentBranchName string,
 	hasRebaseUpdateRefsConfig bool,
 	fullDescription bool,
@@ -195,6 +196,12 @@ func GetCommitListDisplayStrings(
 					(hasRebaseUpdateRefsConfig || b.CommitHash != commits[0].Hash())
 		}))
 
+	// Branches checked out in another worktree get a marker on their ref label
+	branchesInOtherWorktrees := set.NewFromSlice(lo.FilterMap(worktrees,
+		func(w *models.Worktree, _ int) (string, bool) {
+			return w.Branch, !w.IsCurrent && w.Branch != ""
+		}))
+
 	lines := make([][]string, 0, len(filteredCommits))
 	var bisectStatus BisectStatus
 	willBeRebased := markedBaseCommit == ""
@@ -209,6 +216,7 @@ func GetCommitListDisplayStrings(
 			common,
 			commit,
 			branchHeadsToVisualize,
+			branchesInOtherWorktrees,
 			hasRebaseUpdateRefsConfig,
 			cherryPickedCommitHashSet,
 			isMarkedBaseCommit,
@@ -371,6 +379,7 @@ func displayCommit(
 	common *common.Common,
 	commit *models.Commit,
 	branchHeadsToVisualize *set.Set[string],
+	branchesInOtherWorktrees *set.Set[string],
 	hasRebaseUpdateRefsConfig bool,
 	cherryPickedCommitHashSet *set.Set[string],
 	isMarkedBaseCommit bool,
@@ -424,7 +433,9 @@ func displayCommit(
 	}
 
 	tagString := ""
-	if fullDescription {
+	if common.UserConfig().Gui.ShowRefLabelsInCommitsView {
+		tagString = renderRefLabels(commit.Refs, laneStyle, branchesInOtherWorktrees)
+	} else if fullDescription {
 		if commit.ExtraInfo != "" {
 			tagString = coloredExtraInfo(commit.ExtraInfo, laneStyle) + " "
 		}

@@ -832,6 +832,11 @@
           "description": "Whether to show the divergence from the base branch in the branches view.\nOne of: 'none' | 'onlyArrow'  | 'arrowAndNumber'",
           "default": "none"
         },
+        "showRefLabelsInCommitsView": {
+          "type": "boolean",
+          "description": "If true, the branches, remote branches and tags pointing at a commit are shown as colored labels next to it in the commits view, GitKraken-style. If false, only tags and a '*' marker for branch heads are shown.",
+          "default": true
+        },
         "commandLogSize": {
           "type": "integer",
           "minimum": 0,
