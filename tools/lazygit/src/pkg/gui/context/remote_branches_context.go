@@ -21,15 +21,43 @@ var (
 func NewRemoteBranchesContext(
 	c *ContextCommon,
 ) *RemoteBranchesContext {
+	branchName := func(branch *models.RemoteBranch) string { return branch.Name }
+	groupingEnabled := func() bool { return c.UserConfig().Gui.GroupBranchesByPrefix }
+
 	viewModel := NewFilteredListViewModel(
-		func() []*models.RemoteBranch { return c.Model().RemoteBranches },
+		func() []*models.RemoteBranch {
+			if !groupingEnabled() {
+				return c.Model().RemoteBranches
+			}
+			return presentation.GroupByRefNamePrefix(c.Model().RemoteBranches, branchName)
+		},
 		func(remoteBranch *models.RemoteBranch) []string {
 			return []string{remoteBranch.Name}
 		},
 	)
 
 	getDisplayStrings := func(_ int, _ int) [][]string {
-		return presentation.GetRemoteBranchListDisplayStrings(viewModel.GetItems(), c.Modes().Diffing.Ref)
+		items := viewModel.GetItems()
+		var groupPrefixes map[string]string
+		if groupingEnabled() {
+			groupPrefixes = presentation.RefGroupPrefixes(items, branchName)
+		}
+		return presentation.GetRemoteBranchListDisplayStrings(items, c.Modes().Diffing.Ref, groupPrefixes)
+	}
+
+	// Folder headers above groups of branches sharing a name prefix
+	getNonModelItems := func() []*NonModelItem {
+		if !groupingEnabled() {
+			return nil
+		}
+		return lo.Map(presentation.RefGroups(viewModel.GetItems(), branchName),
+			func(group presentation.RefGroup, _ int) *NonModelItem {
+				return &NonModelItem{
+					Index:   group.Index,
+					Content: presentation.FormatRefGroupHeader(group.Prefix),
+					Column:  0,
+				}
+			})
 	}
 
 	return &RemoteBranchesContext{
@@ -48,6 +76,7 @@ func NewRemoteBranchesContext(
 			ListRenderer: ListRenderer{
 				list:              viewModel,
 				getDisplayStrings: getDisplayStrings,
+				getNonModelItems:  getNonModelItems,
 			},
 			c: c,
 		},

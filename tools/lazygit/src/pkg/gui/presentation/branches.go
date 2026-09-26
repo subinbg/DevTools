@@ -37,10 +37,11 @@ func GetBranchListDisplayStrings(
 	tr *i18n.TranslationSet,
 	userConfig *config.UserConfig,
 	worktrees []*models.Worktree,
+	groupPrefixes map[string]string,
 ) [][]string {
 	return lo.Map(branches, func(branch *models.Branch, _ int) []string {
 		diffed := branch.Name == diffName
-		return getBranchDisplayStrings(branch, getItemOperation(branch), fullDescription, diffed, viewWidth, tr, userConfig, worktrees, time.Now(), prs)
+		return getBranchDisplayStrings(branch, getItemOperation(branch), fullDescription, diffed, viewWidth, tr, userConfig, worktrees, time.Now(), prs, groupPrefixes[branch.Name])
 	})
 }
 
@@ -56,6 +57,7 @@ func getBranchDisplayStrings(
 	worktrees []*models.Worktree,
 	now time.Time,
 	prs map[string]*models.GithubPullRequest,
+	groupPrefix string,
 ) []string {
 	checkedOutByWorkTree := git_commands.CheckedOutByOtherWorktree(b, worktrees)
 	showCommitHash := fullDescription || userConfig.Gui.ShowBranchCommitHash
@@ -80,6 +82,7 @@ func getBranchDisplayStrings(
 	if b.DisplayName != "" {
 		displayName = b.DisplayName
 	}
+	displayName = refGroupDisplayName(displayName, groupPrefix)
 
 	if len(branchStatus) > 0 {
 		availableWidth -= utils.StringWidth(utils.Decolorise(branchStatus)) + 1
@@ -215,6 +218,21 @@ func GetBranchTextStyleForBranch(b *models.Branch) style.TextStyle {
 	}
 
 	return *palette.ByName(b.Name)
+}
+
+// GetRemoteBranchTextStyle colors a remote branch like the graph lane of the
+// commit it points at, falling back to a stable per-name color. Explicit
+// branchColorPatterns match the branch name without the remote, as before.
+func GetRemoteBranchTextStyle(b *models.RemoteBranch) style.TextStyle {
+	if style, ok := colorPatterns.match(b.Name); ok {
+		return *style
+	}
+
+	if laneStyle := laneStyleForRef(b.FullName()); laneStyle != nil {
+		return *laneStyle
+	}
+
+	return *palette.ByName(b.FullName())
 }
 
 func (m *colorMatcher) match(name string) (*style.TextStyle, bool) {

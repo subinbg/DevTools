@@ -189,6 +189,8 @@ type GuiConfig struct {
 	ShowDivergenceFromBaseBranch string `yaml:"showDivergenceFromBaseBranch" jsonschema:"enum=none,enum=onlyArrow,enum=arrowAndNumber"`
 	// If true, the branches, remote branches and tags pointing at a commit are shown as colored labels next to it in the commits view, GitKraken-style. If false, only tags and a '*' marker for branch heads are shown.
 	ShowRefLabelsInCommitsView bool `yaml:"showRefLabelsInCommitsView"`
+	// If true, branches whose names share a directory-like prefix (e.g. 'feature/') are listed together under a folder header in the branches views.
+	GroupBranchesByPrefix bool `yaml:"groupBranchesByPrefix"`
 	// Height of the command log view
 	CommandLogSize int `yaml:"commandLogSize" jsonschema:"minimum=0"`
 	// Whether to split the main window when viewing file changes.
@@ -918,6 +920,7 @@ func GetDefaultConfigForPlatform(platform string) *UserConfig {
 			ShowBranchCommitHash:                false,
 			ShowDivergenceFromBaseBranch:        "none",
 			ShowRefLabelsInCommitsView:          true,
+			GroupBranchesByPrefix:               true,
 			CommandLogSize:                      8,
 			SplitDiff:                           "auto",
 			SkipRewordInEditorWarning:           false,

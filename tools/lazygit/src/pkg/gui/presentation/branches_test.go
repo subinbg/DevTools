@@ -9,6 +9,7 @@ import (
 	"github.com/gookit/color"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/common"
+	"github.com/jesseduffield/lazygit/pkg/config"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/icons"
 	"github.com/jesseduffield/lazygit/pkg/gui/style"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
@@ -419,6 +420,8 @@ func Test_getBranchDisplayStrings(t *testing.T) {
 	defer color.ForceSetColorLevel(oldColorLevel)
 
 	c := common.NewDummyCommon()
+	// these scenarios were written against upstream's defaults
+	config.ApplyUpstreamDefaults(c.UserConfig())
 	SetCustomBranches(c.UserConfig().Gui.BranchColorPatterns, true)
 
 	for i, s := range scenarios {
@@ -431,7 +434,7 @@ func Test_getBranchDisplayStrings(t *testing.T) {
 		}
 
 		t.Run(fmt.Sprintf("getBranchDisplayStrings_%d", i), func(t *testing.T) {
-			strings := getBranchDisplayStrings(s.branch, s.itemOperation, s.fullDescription, false, s.viewWidth, c.Tr, c.UserConfig(), worktrees, time.Time{}, map[string]*models.GithubPullRequest{})
+			strings := getBranchDisplayStrings(s.branch, s.itemOperation, s.fullDescription, false, s.viewWidth, c.Tr, c.UserConfig(), worktrees, time.Time{}, map[string]*models.GithubPullRequest{}, "")
 			assert.Equal(t, s.expected, strings)
 		})
 	}

@@ -29,7 +29,7 @@ func TestGetWindowDimensions(t *testing.T) {
 		return WindowArrangementArgs{
 			Width:             75,
 			Height:            30,
-			UserConfig:        config.GetDefaultConfig(),
+			UserConfig:        upstreamDefaultConfig(),
 			CurrentWindow:     "files",
 			CurrentSideWindow: "files",
 			// Each panel shows its first tab by default; for the special-cased
@@ -1065,4 +1065,11 @@ func renderLayout(windows map[string]boxlayout.Dimensions) string {
 	output = strings.TrimSpace(output)
 
 	return output
+}
+
+// The layout scenarios were written against upstream's defaults.
+func upstreamDefaultConfig() *config.UserConfig {
+	cfg := config.GetDefaultConfig()
+	config.ApplyUpstreamDefaults(cfg)
+	return cfg
 }

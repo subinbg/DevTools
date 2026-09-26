@@ -297,6 +297,10 @@ gui:
   # only tags and a '*' marker for branch heads are shown.
   showRefLabelsInCommitsView: true
 
+  # If true, branches whose names share a directory-like prefix (e.g. 'feature/')
+  # are listed together under a folder header in the branches views.
+  groupBranchesByPrefix: true
+
   # Height of the command log view
   commandLogSize: 8
 

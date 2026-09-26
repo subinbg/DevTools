@@ -837,6 +837,11 @@
           "description": "If true, the branches, remote branches and tags pointing at a commit are shown as colored labels next to it in the commits view, GitKraken-style. If false, only tags and a '*' marker for branch heads are shown.",
           "default": true
         },
+        "groupBranchesByPrefix": {
+          "type": "boolean",
+          "description": "If true, branches whose names share a directory-like prefix (e.g. 'feature/') are listed together under a folder header in the branches views.",
+          "default": true
+        },
         "commandLogSize": {
           "type": "integer",
           "minimum": 0,

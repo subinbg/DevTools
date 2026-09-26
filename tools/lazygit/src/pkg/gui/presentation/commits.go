@@ -34,9 +34,12 @@ var (
 	laneStyleCache = make(map[pipeSetCacheKey]map[string]*style.TextStyle)
 	mutex          deadlock.Mutex
 
-	// lane styles of every commit in the loaded graph(s), published so that
-	// other panels (branches, status) can color a ref like its commit's lane
+	// lane styles of every commit in the loaded graph(s), by commit hash and
+	// by the name of each ref pointing at the commit ("main", "origin/main",
+	// "v1.0.0"), published so that other panels (branches, remote branches,
+	// status) can color a ref like its commit's lane
 	laneStyleRegistry      = map[string]*style.TextStyle{}
+	refLaneStyleRegistry   = map[string]*style.TextStyle{}
 	laneStyleRegistryMutex deadlock.RWMutex
 )
 
@@ -44,6 +47,12 @@ func laneStyleForCommit(hash string) *style.TextStyle {
 	laneStyleRegistryMutex.RLock()
 	defer laneStyleRegistryMutex.RUnlock()
 	return laneStyleRegistry[hash]
+}
+
+func laneStyleForRef(name string) *style.TextStyle {
+	laneStyleRegistryMutex.RLock()
+	defer laneStyleRegistryMutex.RUnlock()
+	return refLaneStyleRegistry[name]
 }
 
 type bisectBounds struct {
@@ -298,6 +307,13 @@ func loadPipesets(commits []*models.Commit) ([][]graph.Pipe, map[string]*style.T
 
 		laneStyleRegistryMutex.Lock()
 		maps.Copy(laneStyleRegistry, laneStyles)
+		for _, commit := range commits {
+			if laneStyle, ok := laneStyles[commit.Hash()]; ok {
+				for _, ref := range commit.Refs {
+					refLaneStyleRegistry[ref.Name] = laneStyle
+				}
+			}
+		}
 		laneStyleRegistryMutex.Unlock()
 	}
 

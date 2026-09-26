@@ -7,16 +7,16 @@ import (
 	"github.com/samber/lo"
 )
 
-func GetRemoteBranchListDisplayStrings(branches []*models.RemoteBranch, diffName string) [][]string {
+func GetRemoteBranchListDisplayStrings(branches []*models.RemoteBranch, diffName string, groupPrefixes map[string]string) [][]string {
 	return lo.Map(branches, func(branch *models.RemoteBranch, _ int) []string {
 		diffed := branch.FullName() == diffName
-		return getRemoteBranchDisplayStrings(branch, diffed)
+		return getRemoteBranchDisplayStrings(branch, diffed, groupPrefixes[branch.Name])
 	})
 }
 
 // getRemoteBranchDisplayStrings returns the display string of branch
-func getRemoteBranchDisplayStrings(b *models.RemoteBranch, diffed bool) []string {
-	textStyle := GetBranchTextStyle(b.Name)
+func getRemoteBranchDisplayStrings(b *models.RemoteBranch, diffed bool, groupPrefix string) []string {
+	textStyle := GetRemoteBranchTextStyle(b)
 	if diffed {
 		textStyle = theme.DiffTerminalColor
 	}
@@ -25,6 +25,6 @@ func getRemoteBranchDisplayStrings(b *models.RemoteBranch, diffed bool) []string
 	if icons.IsIconEnabled() {
 		res = append(res, textStyle.Sprint(icons.IconForRemoteBranch(b)))
 	}
-	res = append(res, textStyle.Sprint(b.Name))
+	res = append(res, textStyle.Sprint(refGroupDisplayName(b.Name, groupPrefix)))
 	return res
 }
