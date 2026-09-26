@@ -34,7 +34,7 @@ func FormatStatus(
 		status += style.FgYellow.Sprintf("(%s) ", workingTreeState.LowerCaseTitle(tr))
 	}
 
-	name := GetBranchTextStyle(currentBranch.Name).Sprint(currentBranch.Name)
+	name := GetBranchTextStyleForBranch(currentBranch).Sprint(currentBranch.Name)
 	// If the user is in a linked worktree (i.e. not the main worktree) we'll display that
 	if linkedWorktreeName != "" {
 		icon := ""

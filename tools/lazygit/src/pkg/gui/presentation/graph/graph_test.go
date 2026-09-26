@@ -9,6 +9,7 @@ import (
 	"github.com/gookit/color"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/authors"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/palette"
 	"github.com/jesseduffield/lazygit/pkg/gui/style"
 	"github.com/jesseduffield/lazygit/pkg/utils"
 	"github.com/samber/lo"
@@ -500,7 +501,7 @@ func TestGetNextPipes(t *testing.T) {
 			}),
 			expected: []Pipe{
 				{fromPos: 0, toPos: 0, fromHash: pool("a"), toHash: pool("b"), kind: TERMINATES, style: &style.FgDefault},
-				{fromPos: 0, toPos: 0, fromHash: pool("b"), toHash: pool("c"), kind: STARTS, style: &style.FgDefault},
+				{fromPos: 0, toPos: 0, fromHash: pool("b"), toHash: pool("c"), kind: STARTS, style: palette.ByIndex(0)},
 			},
 		},
 		{
@@ -516,7 +517,7 @@ func TestGetNextPipes(t *testing.T) {
 			expected: []Pipe{
 				{fromPos: 0, toPos: 0, fromHash: pool("b"), toHash: pool("c"), kind: CONTINUES, style: &style.FgDefault},
 				{fromPos: 1, toPos: 1, fromHash: pool("b"), toHash: pool("d"), kind: TERMINATES, style: &style.FgDefault},
-				{fromPos: 1, toPos: 1, fromHash: pool("d"), toHash: pool("e"), kind: STARTS, style: &style.FgDefault},
+				{fromPos: 1, toPos: 1, fromHash: pool("d"), toHash: pool("e"), kind: STARTS, style: palette.ByIndex(1)},
 			},
 		},
 		{
@@ -528,7 +529,7 @@ func TestGetNextPipes(t *testing.T) {
 				Parents: []string{},
 			}),
 			expected: []Pipe{
-				{fromPos: 1, toPos: 1, fromHash: pool("root"), toHash: pool(models.EmptyTreeCommitHash), kind: STARTS, style: &style.FgDefault},
+				{fromPos: 1, toPos: 1, fromHash: pool("root"), toHash: pool(models.EmptyTreeCommitHash), kind: STARTS, style: palette.ByIndex(1)},
 			},
 		},
 	}

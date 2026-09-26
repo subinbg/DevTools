@@ -9,6 +9,7 @@ import (
 
 	"github.com/jesseduffield/generics/set"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/palette"
 	"github.com/jesseduffield/lazygit/pkg/gui/style"
 	"github.com/jesseduffield/lazygit/pkg/utils"
 	"github.com/samber/lo"
@@ -56,12 +57,38 @@ func RenderCommitGraph(commits []*models.Commit, selectedCommitHashPtr *string, 
 	return lines
 }
 
+// CommitLaneStyles maps each commit's hash to the style of the lane its dot
+// sits on (the style of its main STARTS pipe), so that other views can match
+// a ref's color to the color of its commit's graph line.
+func CommitLaneStyles(pipeSets [][]Pipe, commits []*models.Commit) map[string]*style.TextStyle {
+	result := make(map[string]*style.TextStyle, len(commits))
+	for i, commit := range commits {
+		var laneStyle *style.TextStyle
+		for _, pipe := range pipeSets[i] {
+			if pipe.kind == STARTS && equalHashes(pipe.fromHash, commit.HashPtr()) {
+				if pipe.fromPos == pipe.toPos {
+					// the commit's own lane, as opposed to a merge-parent branch
+					laneStyle = pipe.style
+					break
+				}
+				if laneStyle == nil {
+					laneStyle = pipe.style
+				}
+			}
+		}
+		if laneStyle != nil {
+			result[commit.Hash()] = laneStyle
+		}
+	}
+	return result
+}
+
 func GetPipeSets(commits []*models.Commit, getStyle func(c *models.Commit) *style.TextStyle) [][]Pipe {
 	if len(commits) == 0 {
 		return nil
 	}
 
-	pipes := []Pipe{{fromPos: 0, toPos: 0, fromHash: &StartCommitHash, toHash: commits[0].HashPtr(), kind: STARTS, style: &style.FgDefault}}
+	pipes := []Pipe{{fromPos: 0, toPos: 0, fromHash: &StartCommitHash, toHash: commits[0].HashPtr(), kind: STARTS, style: palette.ByIndex(0)}}
 
 	return lo.Map(commits, func(commit *models.Commit, _ int) []Pipe {
 		pipes = getNextPipes(pipes, commit, getStyle)
@@ -152,7 +179,7 @@ func getNextPipes(prevPipes []Pipe, commit *models.Commit, getStyle func(c *mode
 		fromHash: commit.HashPtr(),
 		toHash:   toHash,
 		kind:     STARTS,
-		style:    getStyle(commit),
+		style:    palette.ByIndex(int(pos)),
 	})
 
 	traversedSpotsForContinuingPipes := set.New[int]()
@@ -232,7 +259,7 @@ func getNextPipes(prevPipes []Pipe, commit *models.Commit, getStyle func(c *mode
 				fromHash: commit.HashPtr(),
 				toHash:   parent,
 				kind:     STARTS,
-				style:    getStyle(commit),
+				style:    palette.ByIndex(int(availablePos)),
 			})
 
 			takenSpots.Add(int(availablePos))

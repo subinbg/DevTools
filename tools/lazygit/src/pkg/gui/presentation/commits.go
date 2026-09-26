@@ -2,6 +2,7 @@ package presentation
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/authors"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/graph"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/icons"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/palette"
 	"github.com/jesseduffield/lazygit/pkg/gui/style"
 	"github.com/jesseduffield/lazygit/pkg/theme"
 	"github.com/jesseduffield/lazygit/pkg/utils"
@@ -28,9 +30,21 @@ type pipeSetCacheKey struct {
 }
 
 var (
-	pipeSetCache = make(map[pipeSetCacheKey][][]graph.Pipe)
-	mutex        deadlock.Mutex
+	pipeSetCache   = make(map[pipeSetCacheKey][][]graph.Pipe)
+	laneStyleCache = make(map[pipeSetCacheKey]map[string]*style.TextStyle)
+	mutex          deadlock.Mutex
+
+	// lane styles of every commit in the loaded graph(s), published so that
+	// other panels (branches, status) can color a ref like its commit's lane
+	laneStyleRegistry      = map[string]*style.TextStyle{}
+	laneStyleRegistryMutex deadlock.RWMutex
 )
+
+func laneStyleForCommit(hash string) *style.TextStyle {
+	laneStyleRegistryMutex.RLock()
+	defer laneStyleRegistryMutex.RUnlock()
+	return laneStyleRegistry[hash]
+}
 
 type bisectBounds struct {
 	newIndex int
@@ -76,6 +90,7 @@ func GetCommitListDisplayStrings(
 	bisectBounds := getbisectBounds(commits, bisectInfo)
 
 	// function expects to be passed the index of the commit in terms of the `commits` slice
+	laneStyles := map[string]*style.TextStyle{}
 	var getGraphLine func(int) string
 	if showGraph {
 		if len(commits) > 0 && commits[0].Divergence != models.DivergenceNone {
@@ -92,7 +107,8 @@ func GetCommitListDisplayStrings(
 
 			if localSectionStart > 0 {
 				// we have some remote commits
-				pipeSets := loadPipesets(commits[:localSectionStart])
+				pipeSets, sectionLaneStyles := loadPipesets(commits[:localSectionStart])
+				maps.Copy(laneStyles, sectionLaneStyles)
 				if startIdx < localSectionStart {
 					// some of the remote commits are visible
 					start := startIdx
@@ -109,7 +125,8 @@ func GetCommitListDisplayStrings(
 			}
 			if localSectionStart < len(commits) {
 				// we have some local commits
-				pipeSets := loadPipesets(commits[localSectionStart:])
+				pipeSets, sectionLaneStyles := loadPipesets(commits[localSectionStart:])
+				maps.Copy(laneStyles, sectionLaneStyles)
 				if localSectionStart < endIdx {
 					// some of the local commits are visible
 					graphOffset := max(startIdx, localSectionStart)
@@ -133,7 +150,8 @@ func GetCommitListDisplayStrings(
 			// but we'll never include TODO commits as part of the graph because it'll be messy)
 			graphOffset := max(startIdx, rebaseOffset)
 
-			pipeSets := loadPipesets(commits[rebaseOffset:])
+			pipeSets, graphLaneStyles := loadPipesets(commits[rebaseOffset:])
+			laneStyles = graphLaneStyles
 			pipeSetOffset := max(startIdx-rebaseOffset, 0)
 			graphPipeSets := pipeSets[pipeSetOffset:max(endIdx-rebaseOffset, 0)]
 			graphCommits := commits[graphOffset:endIdx]
@@ -201,6 +219,7 @@ func GetCommitListDisplayStrings(
 			now,
 			parseEmoji,
 			getGraphLine(unfilteredIdx),
+			laneStyles[commit.Hash()],
 			fullDescription,
 			bisectStatus,
 			bisectInfo,
@@ -244,7 +263,7 @@ func indexOfFirstNonTODOCommit(commits []*models.Commit) int {
 	return 0
 }
 
-func loadPipesets(commits []*models.Commit) [][]graph.Pipe {
+func loadPipesets(commits []*models.Commit) ([][]graph.Pipe, map[string]*style.TextStyle) {
 	// given that our cache key is a commit hash and a commit count, it's very important that we don't actually try to render pipes
 	// when dealing with things like filtered commits.
 	cacheKey := pipeSetCacheKey{
@@ -264,7 +283,17 @@ func loadPipesets(commits []*models.Commit) [][]graph.Pipe {
 		pipeSetCache[cacheKey] = pipeSets
 	}
 
-	return pipeSets
+	laneStyles, ok := laneStyleCache[cacheKey]
+	if !ok {
+		laneStyles = graph.CommitLaneStyles(pipeSets, commits)
+		laneStyleCache[cacheKey] = laneStyles
+
+		laneStyleRegistryMutex.Lock()
+		maps.Copy(laneStyleRegistry, laneStyles)
+		laneStyleRegistryMutex.Unlock()
+	}
+
+	return pipeSets, laneStyles
 }
 
 // similar to the git_commands.BisectStatus but more gui-focused
@@ -352,6 +381,7 @@ func displayCommit(
 	now time.Time,
 	parseEmoji bool,
 	graphLine string,
+	laneStyle *style.TextStyle,
 	fullDescription bool,
 	bisectStatus BisectStatus,
 	bisectInfo *git_commands.BisectInfo,
@@ -396,7 +426,7 @@ func displayCommit(
 	tagString := ""
 	if fullDescription {
 		if commit.ExtraInfo != "" {
-			tagString = style.FgMagenta.SetBold().Sprint(commit.ExtraInfo) + " "
+			tagString = coloredExtraInfo(commit.ExtraInfo, laneStyle) + " "
 		}
 	} else {
 		if len(commit.Tags) > 0 {
@@ -529,4 +559,31 @@ func actionColorMap(action todo.TodoCommand, status models.CommitStatus) style.T
 	default:
 		return style.FgYellow
 	}
+}
+
+// coloredExtraInfo renders a decoration string like
+// "(HEAD -> master, origin/master, tag: v0.15.2)" colored like the graph
+// lane of the commit it decorates, so branch names match their graph lines.
+// Without a lane style (graph hidden or commit outside it), each ref gets a
+// stable palette color derived from its name instead.
+func coloredExtraInfo(extraInfo string, laneStyle *style.TextStyle) string {
+	if laneStyle != nil {
+		return laneStyle.SetBold().Sprint(extraInfo)
+	}
+
+	inner := strings.TrimSuffix(strings.TrimPrefix(extraInfo, "("), ")")
+	parts := strings.Split(inner, ", ")
+	colored := make([]string, 0, len(parts))
+	for _, part := range parts {
+		name := part
+		if after, found := strings.CutPrefix(name, "HEAD -> "); found {
+			name = after
+		}
+		if after, found := strings.CutPrefix(name, "tag: "); found {
+			name = after
+		}
+		colored = append(colored, palette.ByName(name).SetBold().Sprint(part))
+	}
+	sep := style.FgDefault.Sprint(", ")
+	return style.FgDefault.Sprint("(") + strings.Join(colored, sep) + style.FgDefault.Sprint(")")
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/config"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/icons"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/palette"
 	"github.com/jesseduffield/lazygit/pkg/gui/style"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 	"github.com/jesseduffield/lazygit/pkg/i18n"
@@ -113,7 +114,7 @@ func getBranchDisplayStrings(
 		availableWidth -= utils.StringWidth(worktreeIcon) + 1
 	}
 
-	nameTextStyle := GetBranchTextStyle(b.Name)
+	nameTextStyle := GetBranchTextStyleForBranch(b)
 	if diffed {
 		nameTextStyle = theme.DiffTerminalColor
 	}
@@ -197,7 +198,23 @@ func GetBranchTextStyle(name string) style.TextStyle {
 		return *style
 	}
 
-	return theme.DefaultTextColor
+	// no explicit pattern matched: assign a stable palette color per branch
+	return *palette.ByName(name)
+}
+
+// GetBranchTextStyleForBranch is like GetBranchTextStyle but, when no
+// explicit pattern matches, prefers the color of the graph lane holding the
+// branch's head commit, so the branches panel matches the commit graph.
+func GetBranchTextStyleForBranch(b *models.Branch) style.TextStyle {
+	if style, ok := colorPatterns.match(b.Name); ok {
+		return *style
+	}
+
+	if laneStyle := laneStyleForCommit(b.CommitHash); laneStyle != nil {
+		return *laneStyle
+	}
+
+	return *palette.ByName(b.Name)
 }
 
 func (m *colorMatcher) match(name string) (*style.TextStyle, bool) {
