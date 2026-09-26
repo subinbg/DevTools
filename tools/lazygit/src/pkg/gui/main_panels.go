@@ -22,6 +22,9 @@ func (gui *Gui) runTaskForView(view *gocui.View, task types.UpdateTask) error {
 
 	case *types.RunPtyTask:
 		return gui.newPtyTask(view, v.Cmd, v.Prefix)
+
+	case *types.RenderFuncTask:
+		return gui.newFuncTask(view, v.Key, v.Prefix, v.Render)
 	}
 
 	return nil
@@ -64,6 +67,14 @@ func (gui *Gui) RefreshMainView(opts *types.ViewUpdateOpts, context types.Contex
 	}
 
 	view.Subtitle = opts.SubTitle
+
+	// A commit log rendered by lazygit (see types.RenderFuncTask) shows one
+	// commit per line, like the commits panel, so it must not wrap; diffs and
+	// command output do wrap.
+	if view == gui.Views.Main || view == gui.Views.Secondary {
+		_, isFuncTask := opts.Task.(*types.RenderFuncTask)
+		view.Wrap = !isFuncTask
+	}
 
 	if err := gui.runTaskForView(view, opts.Task); err != nil {
 		gui.c.Log.Error(err)

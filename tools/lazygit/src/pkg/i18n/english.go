@@ -698,6 +698,8 @@ type TranslationSet struct {
 	OpenCommandLogMenuTooltip             string
 	ShowingGitDiff                        string
 	ShowingDiffForRange                   string
+	ShowingFirstNCommits                  string
+	SelectionCopiedToClipboard            string
 	CommitDiff                            string
 	CopyCommitHashToClipboard             string
 	CommitHash                            string
@@ -1867,6 +1869,8 @@ func EnglishTranslationSet() *TranslationSet {
 		OpenCommandLogMenuTooltip:                "View options for the command log e.g. show/hide the command log and focus the command log.",
 		ShowingGitDiff:                           "Showing output for:",
 		ShowingDiffForRange:                      "Showing diff for range",
+		ShowingFirstNCommits:                     "Showing the first %d commits",
+		SelectionCopiedToClipboard:               "Selection copied to clipboard",
 		CommitDiff:                               "Commit diff",
 		CopyCommitHashToClipboard:                "Copy abbreviated commit hash to clipboard",
 		CommitHash:                               "Commit hash",

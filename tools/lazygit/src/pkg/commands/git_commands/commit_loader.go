@@ -54,6 +54,10 @@ func NewCommitLoader(
 	}
 }
 
+// CommitLimit is the number of commits loaded when GetCommitsOptions.Limit
+// is set.
+const CommitLimit = 300
+
 type GetCommitsOptions struct {
 	Limit                bool
 	FilterPath           string
@@ -613,7 +617,7 @@ func (self *CommitLoader) getLogCmd(opts GetCommitsOptions) *oscommands.CmdObj {
 		Arg("--decorate=full").
 		Arg("--abbrev=40").
 		ArgIf(opts.FilterAuthor != "", "--author="+opts.FilterAuthor).
-		ArgIf(opts.Limit, "-300").
+		ArgIf(opts.Limit, fmt.Sprintf("-%d", CommitLimit)).
 		ArgIf(opts.FilterPath != "", "--follow", "--name-status").
 		Arg("--no-show-signature").
 		ArgIf(opts.RefToShowDivergenceFrom != "", "--left-right").

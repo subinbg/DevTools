@@ -52,6 +52,7 @@ type Helpers struct {
 	WindowArrangement *WindowArrangementHelper
 	Search            *SearchHelper
 	Worktree          *WorktreeHelper
+	LogGraph          *LogGraphHelper
 	SubCommits        *SubCommitsHelper
 }
 

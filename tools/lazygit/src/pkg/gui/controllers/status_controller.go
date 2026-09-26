@@ -16,6 +16,12 @@ import (
 type StatusController struct {
 	baseController
 	c *ControllerCommon
+
+	// With gui.mainViewCommitGraph, the all-branches log shown for the status
+	// panel is lazygit's own commit graph, and the git.allBranchesLogCmds come
+	// after it when cycling through the logs. This is true while one of those
+	// commands is being shown instead of the graph.
+	showingTextLog bool
 }
 
 var _ types.IController = &StatusController{}
@@ -144,14 +150,30 @@ func (self *StatusController) editConfig() error {
 	return (&EditConfigAction{c: self.c}).Call()
 }
 
-func (self *StatusController) showAllBranchLogs() {
-	cmdObj := self.c.Git().Branch.AllBranchesLogCmdObj()
-	task := types.NewRunPtyTask(cmdObj.GetCmd())
+func (self *StatusController) usesLogGraph() bool {
+	return self.c.UserConfig().Gui.MainViewCommitGraph
+}
 
+func (self *StatusController) showAllBranchLogs() {
+	var task types.UpdateTask
 	title := self.c.Tr.LogTitle
-	if i, n := self.c.Git().Branch.GetAllBranchesLogIdxAndCount(); n > 1 {
-		title = fmt.Sprintf(self.c.Tr.LogXOfYTitle, i+1, n)
+	i, n := self.c.Git().Branch.GetAllBranchesLogIdxAndCount()
+
+	if self.usesLogGraph() && !self.showingTextLog {
+		task = self.c.Helpers().LogGraph.AllBranchesTask()
+		if n > 0 {
+			title = fmt.Sprintf(self.c.Tr.LogXOfYTitle, 1, n+1)
+		}
+	} else {
+		cmdObj := self.c.Git().Branch.AllBranchesLogCmdObj()
+		task = types.NewRunPtyTask(cmdObj.GetCmd())
+		if self.usesLogGraph() {
+			title = fmt.Sprintf(self.c.Tr.LogXOfYTitle, i+2, n+1)
+		} else if n > 1 {
+			title = fmt.Sprintf(self.c.Tr.LogXOfYTitle, i+1, n)
+		}
 	}
+
 	self.c.RenderToMainViews(types.RefreshMainOpts{
 		Pair: self.c.MainViewPairs().Normal,
 		Main: &types.ViewUpdateOpts{
@@ -168,7 +190,7 @@ func (self *StatusController) switchToOrRotateAllBranchesLogs() {
 	// if we currently are looking at a branch log. Otherwise, we should just show
 	// the current index (if we are coming from the dashboard).
 	if self.c.Views().Main.Title != self.c.Tr.StatusTitle {
-		self.c.Git().Branch.RotateAllBranchesLogIdx()
+		self.rotateLog(true)
 	}
 	self.showAllBranchLogs()
 }
@@ -180,9 +202,44 @@ func (self *StatusController) switchToOrRotateAllBranchesLogsBackward() {
 	// if we currently are looking at a branch log. Otherwise, we should just show
 	// the current index (if we are coming from the dashboard).
 	if self.c.Views().Main.Title != self.c.Tr.StatusTitle {
-		self.c.Git().Branch.RotateAllBranchesLogIdxBackward()
+		self.rotateLog(false)
 	}
 	self.showAllBranchLogs()
+}
+
+// rotateLog moves to the next (or previous) log view. With the log graph
+// enabled the cycle is: graph, then each of the git.allBranchesLogCmds.
+func (self *StatusController) rotateLog(forward bool) {
+	if !self.usesLogGraph() {
+		if forward {
+			self.c.Git().Branch.RotateAllBranchesLogIdx()
+		} else {
+			self.c.Git().Branch.RotateAllBranchesLogIdxBackward()
+		}
+		return
+	}
+
+	i, n := self.c.Git().Branch.GetAllBranchesLogIdxAndCount()
+	if n == 0 {
+		return
+	}
+
+	switch {
+	case !self.showingTextLog && forward:
+		self.showingTextLog = true
+		self.c.Git().Branch.SetAllBranchesLogIdx(0)
+	case !self.showingTextLog:
+		self.showingTextLog = true
+		self.c.Git().Branch.SetAllBranchesLogIdx(n - 1)
+	case forward && i == n-1:
+		self.showingTextLog = false
+	case forward:
+		self.c.Git().Branch.RotateAllBranchesLogIdx()
+	case i == 0:
+		self.showingTextLog = false
+	default:
+		self.c.Git().Branch.RotateAllBranchesLogIdxBackward()
+	}
 }
 
 func (self *StatusController) showDashboard() {

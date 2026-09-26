@@ -3,6 +3,7 @@ package helpers
 import (
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/gui/patch_exploring"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/prettydiff"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 )
 
@@ -63,12 +64,13 @@ func (self *StagingHelper) RefreshStagingPanel(focusOpts types.OnFocusOpts) {
 	secondaryContext.GetMutex().Lock()
 
 	hunkMode := self.c.UserConfig().Gui.UseHunkModeInStagingView
+	pretty := prettydiff.ThemeIf(self.c.UserConfig().Gui.PrettyDiff, self.c.UserConfig().Gui.PrettyDiffTheme)
 	mainContext.SetState(
-		patch_exploring.NewState(mainDiff, mainSelectedLineIdx, mainContext.GetView(), mainContext.GetState(), hunkMode),
+		patch_exploring.NewState(mainDiff, mainSelectedLineIdx, mainContext.GetView(), mainContext.GetState(), hunkMode, pretty),
 	)
 
 	secondaryContext.SetState(
-		patch_exploring.NewState(secondaryDiff, secondarySelectedLineIdx, secondaryContext.GetView(), secondaryContext.GetState(), hunkMode),
+		patch_exploring.NewState(secondaryDiff, secondarySelectedLineIdx, secondaryContext.GetView(), secondaryContext.GetState(), hunkMode, pretty),
 	)
 
 	mainState := mainContext.GetState()

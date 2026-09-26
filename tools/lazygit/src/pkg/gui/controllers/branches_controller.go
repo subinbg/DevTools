@@ -204,15 +204,20 @@ func (self *BranchesController) GetOnRenderToMain() func() {
 			if branch == nil {
 				task = types.NewRenderStringTask(self.c.Tr.NoBranchesThisRepo)
 			} else {
-				cmdObj := self.c.Git().Branch.GetGraphCmdObj(branch.FullRefName())
-
-				ptyTask := types.NewRunPtyTask(cmdObj.GetCmd())
-				task = ptyTask
-
+				prefix := ""
 				pr, ok := self.c.Model().PullRequestsMap[branch.Name]
 				if ok && presentation.ShouldShowPrForBranch(pr, branch.Name, self.c.UserConfig()) {
-					ptyTask.Prefix = presentation.FormatPullRequestHeader(pr, self.c.Tr)
-					ptyTask.Prefix += strings.Repeat("─", self.c.Contexts().Normal.GetView().InnerWidth()) + "\n"
+					prefix = presentation.FormatPullRequestHeader(pr, self.c.Tr)
+					prefix += strings.Repeat("─", self.c.Contexts().Normal.GetView().InnerWidth()) + "\n"
+				}
+
+				if self.c.UserConfig().Gui.MainViewCommitGraph {
+					graphTask := self.c.Helpers().LogGraph.BranchTask(branch)
+					graphTask.Prefix = prefix
+					task = graphTask
+				} else {
+					cmdObj := self.c.Git().Branch.GetGraphCmdObj(branch.FullRefName())
+					task = types.NewRunPtyTaskWithPrefix(cmdObj.GetCmd(), prefix)
 				}
 			}
 

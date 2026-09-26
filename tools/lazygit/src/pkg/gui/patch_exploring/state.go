@@ -6,6 +6,7 @@ import (
 	"github.com/jesseduffield/generics/set"
 	"github.com/jesseduffield/lazygit/pkg/commands/patch"
 	"github.com/jesseduffield/lazygit/pkg/gocui"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/prettydiff"
 	"github.com/jesseduffield/lazygit/pkg/utils"
 	"github.com/samber/lo"
 )
@@ -34,6 +35,9 @@ type State struct {
 	// on by default.
 	// this makes a difference for whether we want to escape out of hunk mode
 	userEnabledHunkMode bool
+
+	// the pretty layout the patch is rendered in, if any (see gui.prettyDiff)
+	pretty *prettydiff.Theme
 }
 
 // these represent what select mode we're in
@@ -45,7 +49,7 @@ const (
 	HUNK
 )
 
-func NewState(diff string, selectedLineIdx int, view *gocui.View, oldState *State, useHunkModeByDefault bool) *State {
+func NewState(diff string, selectedLineIdx int, view *gocui.View, oldState *State, useHunkModeByDefault bool, pretty *prettydiff.Theme) *State {
 	if oldState != nil && diff == oldState.diff && selectedLineIdx == -1 {
 		// if we're here then we can return the old state. If selectedLineIdx was not -1
 		// then that would mean we were trying to click and potentially drag a range, which
@@ -59,7 +63,7 @@ func NewState(diff string, selectedLineIdx int, view *gocui.View, oldState *Stat
 		return nil
 	}
 
-	viewLineIndices, patchLineIndices := wrapPatchLines(diff, view)
+	viewLineIndices, patchLineIndices := wrapPatchLines(textForWrapping(diff, patch, pretty), view)
 
 	rangeStartLineIdx := 0
 	if oldState != nil {
@@ -121,6 +125,7 @@ func NewState(diff string, selectedLineIdx int, view *gocui.View, oldState *Stat
 		viewLineIndices:     viewLineIndices,
 		patchLineIndices:    patchLineIndices,
 		userEnabledHunkMode: userEnabledHunkMode,
+		pretty:              pretty,
 	}
 }
 
@@ -134,7 +139,7 @@ func (s *State) OnViewWidthChanged(view *gocui.View) {
 	if s.selectMode == RANGE {
 		rangeStartPatchLineIdx = s.patchLineIndices[s.rangeStartLineIdx]
 	}
-	s.viewLineIndices, s.patchLineIndices = wrapPatchLines(s.diff, view)
+	s.viewLineIndices, s.patchLineIndices = wrapPatchLines(textForWrapping(s.diff, s.patch, s.pretty), view)
 	s.selectedLineIdx = s.viewLineIndices[selectedPatchLineIdx]
 	if s.selectMode == RANGE {
 		s.rangeStartLineIdx = s.viewLineIndices[rangeStartPatchLineIdx]
@@ -399,6 +404,7 @@ func (s *State) RenderForLineIndices(includedLineIndices []int) string {
 	includedLineIndicesSet := set.NewFromSlice(includedLineIndices)
 	return s.patch.FormatView(patch.FormatViewOpts{
 		IncLineIndices: includedLineIndicesSet,
+		Pretty:         s.pretty,
 	})
 }
 
@@ -421,6 +427,16 @@ func (s *State) CalculateOrigin(currentOrigin int, bufferHeight int, numLines in
 	firstLineIdx, lastLineIdx := s.SelectedViewRange()
 
 	return calculateOrigin(currentOrigin, bufferHeight, numLines, firstLineIdx, lastLineIdx, s.GetSelectedViewLineIdx(), s.selectMode)
+}
+
+// textForWrapping is the text the view shows for the patch, without colors:
+// the diff itself in the classic layout, and the pretty layout (whose gutter
+// makes lines wrap sooner) otherwise.
+func textForWrapping(diff string, p *patch.Patch, pretty *prettydiff.Theme) string {
+	if pretty == nil {
+		return diff
+	}
+	return p.FormatView(patch.FormatViewOpts{Pretty: pretty, PlainText: true})
 }
 
 func wrapPatchLines(diff string, view *gocui.View) ([]int, []int) {

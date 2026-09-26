@@ -5,6 +5,7 @@ import (
 
 	"github.com/jesseduffield/lazygit/pkg/commands/patch"
 	"github.com/jesseduffield/lazygit/pkg/gui/patch_exploring"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/prettydiff"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 )
 
@@ -90,7 +91,8 @@ func (self *PatchBuildingHelper) RefreshPatchBuildingPanel(opts types.OnFocusOpt
 
 	oldState := context.GetState()
 
-	state := patch_exploring.NewState(diff, selectedLineIdx, context.GetView(), oldState, self.c.UserConfig().Gui.UseHunkModeInStagingView)
+	pretty := prettydiff.ThemeIf(self.c.UserConfig().Gui.PrettyDiff, self.c.UserConfig().Gui.PrettyDiffTheme)
+	state := patch_exploring.NewState(diff, selectedLineIdx, context.GetView(), oldState, self.c.UserConfig().Gui.UseHunkModeInStagingView, pretty)
 	context.SetState(state)
 	if state == nil {
 		self.Escape()

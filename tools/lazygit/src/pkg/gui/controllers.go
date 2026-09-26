@@ -128,6 +128,7 @@ func (gui *Gui) resetHelpersAndControllers() {
 		),
 		Search:     searchHelper,
 		Worktree:   worktreeHelper,
+		LogGraph:   helpers.NewLogGraphHelper(helperCommon),
 		SubCommits: helpers.NewSubCommitsHelper(helperCommon, refreshHelper),
 	}
 

@@ -5,7 +5,9 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/jesseduffield/lazygit/pkg/config"
 	"github.com/jesseduffield/lazygit/pkg/gocui"
+	"github.com/jesseduffield/lazygit/pkg/gui/presentation/prettydiff"
 	"github.com/jesseduffield/lazygit/pkg/tasks"
 	"github.com/sirupsen/logrus"
 )
@@ -35,12 +37,17 @@ func (gui *Gui) newCmdTask(view *gocui.View, cmd *exec.Cmd, prefix string) error
 	// still-running writes (see View.SetContentWidth).
 	contentWidth := view.InnerWidth()
 
+	filter := gui.prettyDiffFilter()
+
 	var r io.ReadCloser
 	start := func() (tasks.Cmd, io.Reader) {
 		view.SetContentWidth(contentWidth)
 
 		execCmd, pipe := startCmdWithPipe(cmd, gui.c.Log)
 		r = pipe
+		if filter != nil {
+			return execCmd, filter(pipe)
+		}
 		return execCmd, pipe
 	}
 
@@ -57,6 +64,23 @@ func (gui *Gui) newCmdTask(view *gocui.View, cmd *exec.Cmd, prefix string) error
 	}
 
 	return nil
+}
+
+// prettyDiffFilter returns a filter formatting the unified diffs in a
+// command's output (see gui.prettyDiff), or nil when that's off or a custom
+// diff renderer (pager or external diff command) produces the output.
+func (gui *Gui) prettyDiffFilter() func(io.Reader) io.Reader {
+	userConfig := gui.c.UserConfig()
+	if !userConfig.Gui.PrettyDiff {
+		return nil
+	}
+	if gui.stateAccessor.GetDiffRendererConfigManager().GetDiffRendererType() != config.DiffRendererType_RawGit {
+		return nil
+	}
+	theme := prettydiff.ThemeByName(userConfig.Gui.PrettyDiffTheme)
+	return func(r io.Reader) io.Reader {
+		return prettydiff.NewReader(r, theme)
+	}
 }
 
 // startCmdWithPipe starts cmd with its stdout and stderr going to a single
@@ -136,6 +160,35 @@ func (gui *Gui) newStringTaskWithKey(view *gocui.View, str string, key string) e
 	}
 
 	return nil
+}
+
+// newFuncTask renders content computed on the task's goroutine (see
+// types.RenderFuncTask). Like newStringTask, the view scrolls back to the top
+// only when the key differs from the previous task's, so that a re-render of
+// the same content keeps the scroll position.
+func (gui *Gui) newFuncTask(view *gocui.View, key string, prefix string, render func(stop <-chan struct{}) string) error {
+	manager := gui.getManager(view)
+	resetOrigin := manager.GetTaskKey() != key
+
+	f := func(opts tasks.TaskOpts) error {
+		content := prefix + render(opts.Stop)
+
+		select {
+		case <-opts.Stop:
+			return nil
+		default:
+		}
+
+		return gui.g.OnUIThreadAndWaitBackground(func() {
+			if resetOrigin {
+				gui.c.ResetViewOrigin(view)
+			}
+			gui.c.SetViewContent(view, content)
+			gui.reApplySearch(view)
+		})
+	}
+
+	return manager.NewTask(f, key)
 }
 
 func (gui *Gui) getManager(view *gocui.View) *tasks.ViewBufferManager {
