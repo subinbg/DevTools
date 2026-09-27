@@ -18,6 +18,7 @@ scripts/package.sh      turns dist/<tool> into <tool>-linux-x64{,.tar.gz,.sha256
 | Tool | Upstream | Build |
 |------|----------|-------|
 | lazygit | https://github.com/jesseduffield/lazygit | Go, `CGO_ENABLED=0`, static |
+| zellij | https://github.com/zellij-org/zellij | Rust, `x86_64-unknown-linux-musl`, static |
 
 ## Daily workflow
 
@@ -57,4 +58,6 @@ merged with local modifications; conflicts are ordinary git merge conflicts unde
 ```sh
 tools/lazygit/build.sh                            # Linux x64 (needs Go)
 GOOS=darwin GOARCH=arm64 tools/lazygit/build.sh   # native macOS build for trying it out
+tools/zellij/build.sh                             # Linux x64 (needs Rust and musl-tools)
+RUSTUP_TOOLCHAIN=stable TARGET=aarch64-apple-darwin tools/zellij/build.sh   # native macOS build
 ```
