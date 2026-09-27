@@ -2995,6 +2995,8 @@ impl Options {
         let host_scrollback =
             kdl_property_first_arg_as_bool_or_error!(kdl_options, "host_scrollback")
                 .map(|(v, _)| v);
+        let session_bar =
+            kdl_property_first_arg_as_bool_or_error!(kdl_options, "session_bar").map(|(v, _)| v);
 
         Ok(Options {
             simplified_ui,
@@ -3058,6 +3060,7 @@ impl Options {
             dangerously_enable_paste_buffer_read,
             dashboard,
             host_scrollback,
+            session_bar,
         })
     }
     pub fn from_string(stringified_keybindings: &String) -> Result<Self, ConfigError> {
@@ -4788,6 +4791,33 @@ impl Options {
             None
         }
     }
+    fn session_bar_to_kdl(&self, add_comments: bool) -> Option<KdlNode> {
+        let comment_text = format!(
+            "{}\n{}\n{}\n{}",
+            " ",
+            "// Whether a session shows a one-line bar at the bottom with its name and the",
+            "// key that returns to the dashboard",
+            "// Default: true",
+        );
+        let create_node = |node_value: bool| -> KdlNode {
+            let mut node = KdlNode::new("session_bar");
+            node.push(KdlValue::Bool(node_value));
+            node
+        };
+        if let Some(value) = self.session_bar {
+            let mut node = create_node(value);
+            if add_comments {
+                node.set_leading(format!("{}\n", comment_text));
+            }
+            Some(node)
+        } else if add_comments {
+            let mut node = create_node(false);
+            node.set_leading(format!("{}\n// ", comment_text));
+            Some(node)
+        } else {
+            None
+        }
+    }
     fn dangerously_enable_paste_buffer_read_to_kdl(&self, add_comments: bool) -> Option<KdlNode> {
         let comment_text = format!(
             "{}\n{}\n{}\n{}\n{}\n{}",
@@ -5034,6 +5064,9 @@ impl Options {
         }
         if let Some(host_scrollback) = self.host_scrollback_to_kdl(add_comments) {
             nodes.push(host_scrollback);
+        }
+        if let Some(session_bar) = self.session_bar_to_kdl(add_comments) {
+            nodes.push(session_bar);
         }
         if let Some(nested_session_handling) = self.nested_session_handling_to_kdl(add_comments) {
             nodes.push(nested_session_handling);

@@ -6751,6 +6751,10 @@ impl Tab {
             && column < viewport.x + viewport.cols)
     }
 
+    /// DevTools fork: whether the lone full-screen pane gives its last row to the session bar.
+    pub fn set_session_bar(&mut self, enabled: bool) {
+        self.tiled_panes.set_session_bar(enabled);
+    }
     pub fn set_pane_frames(&mut self, pane_frame_style: PaneFrameStyle) {
         self.tiled_panes.set_pane_frames(pane_frame_style);
         self.floating_panes.set_pane_frame_style(pane_frame_style);

@@ -265,6 +265,9 @@ Config {
         host_scrollback: Some(
             true,
         ),
+        session_bar: Some(
+            true,
+        ),
     },
     themes: {},
     plugins: PluginAliases {

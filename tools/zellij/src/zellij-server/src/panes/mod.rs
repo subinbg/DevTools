@@ -6,6 +6,7 @@ pub mod kitty_graphics;
 pub mod link_handler;
 pub mod nested_session_modal;
 pub mod selection;
+pub mod session_bar;
 pub mod sixel;
 pub mod terminal_character;
 

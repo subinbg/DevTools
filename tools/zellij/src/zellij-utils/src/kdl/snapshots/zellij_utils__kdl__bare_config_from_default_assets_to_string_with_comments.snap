@@ -400,6 +400,11 @@ dashboard true
 // Default: true
 host_scrollback true
  
+// Whether a session shows a one-line bar at the bottom with its name and the
+// key that returns to the dashboard
+// Default: true
+session_bar true
+ 
 // How to handle a nested Zellij session detected inside a pane.
 // Options:
 //   - "ask" (Default — prompt with a modal)

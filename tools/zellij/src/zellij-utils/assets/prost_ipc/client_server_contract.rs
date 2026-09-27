@@ -2076,6 +2076,8 @@ pub struct Options {
     pub dashboard: ::core::option::Option<bool>,
     #[prost(bool, optional, tag="71")]
     pub host_scrollback: ::core::option::Option<bool>,
+    #[prost(bool, optional, tag="72")]
+    pub session_bar: ::core::option::Option<bool>,
 }
 /// Pane-targeting action messages
 #[allow(clippy::derive_partial_eq_without_eq)]

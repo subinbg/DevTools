@@ -92,6 +92,8 @@ pub struct TiledPanes {
     host_scroll_primed: HashSet<ClientId>,
     /// DevTools fork: the last host-terminal state reported to each client.
     host_scroll_last_state: HashMap<ClientId, zellij_utils::ipc::HostScrollState>,
+    /// DevTools fork: draw the session bar under a lone full-screen terminal pane.
+    session_bar: bool,
 }
 
 impl TiledPanes {
@@ -139,6 +141,7 @@ impl TiledPanes {
             dimmed_clients: HashSet::new(),
             host_scroll_primed: HashSet::new(),
             host_scroll_last_state: HashMap::new(),
+            session_bar: false,
         }
     }
     pub fn set_client_dimmed(&mut self, client_id: ClientId, dimmed: bool) {
@@ -613,10 +616,41 @@ impl TiledPanes {
         // same as set_pane_frames except it reapplies the current situation
         self.set_pane_frames(self.pane_frame_style);
     }
+    /// DevTools fork: turns the session bar on or off and re-applies the pane offsets.
+    pub fn set_session_bar(&mut self, enabled: bool) {
+        if self.session_bar != enabled {
+            self.session_bar = enabled;
+            self.set_pane_frames(self.pane_frame_style);
+        }
+    }
+    /// DevTools fork: the pane that gives its last row to the session bar, if the tab is
+    /// one terminal pane filling the display.
+    fn session_bar_pane_id(&self) -> Option<PaneId> {
+        // with full pane frames the frame's own title line identifies the pane; the bar is
+        // for the frameless layout
+        if !self.session_bar || self.panes.len() != 1 || self.pane_frame_style.draws_full_frames() {
+            return None;
+        }
+        let display_area = *self.display_area.borrow();
+        let (pane_id, pane) = self.panes.iter().next()?;
+        if !matches!(pane_id, PaneId::Terminal(_)) || self.panes_to_hide.contains(pane_id) {
+            return None;
+        }
+        if pane.x() != 0
+            || pane.y() != 0
+            || pane.cols() != display_area.cols
+            || pane.rows() != display_area.rows
+            || pane.rows() < 3
+        {
+            return None;
+        }
+        Some(*pane_id)
+    }
     pub fn set_pane_frames(&mut self, pane_frame_style: PaneFrameStyle) {
         self.pane_frame_style = pane_frame_style;
         let draws_full_frames = pane_frame_style.draws_full_frames();
         let draws_titles = pane_frame_style.draws_titles();
+        let session_bar_pane_id = self.session_bar_pane_id();
         let single_selectable_tiled_pane = self
             .panes
             .values()
@@ -708,6 +742,11 @@ impl TiledPanes {
                 } else {
                     pane.set_content_offset(Offset::shift(pane_rows_offset, pane_columns_offset));
                 }
+            }
+            if session_bar_pane_id == Some(pane.pid()) {
+                let mut offset = pane.get_content_offset();
+                offset.bottom += 1;
+                pane.set_content_offset(offset);
             }
 
             resize_pty!(pane, self.os_api, self.senders, self.character_cell_size).non_fatal();
@@ -1165,6 +1204,7 @@ impl TiledPanes {
         // the host terminal's scrollback
         let host_scroll_candidate = self.panes.len() == 1 && !floating_panes_are_visible;
         let host_scroll_display_area = *self.display_area.borrow();
+        let session_bar_pane_id = self.session_bar_pane_id();
 
         let mut connected_clients: HashSet<ClientId> =
             { self.connected_clients.borrow().iter().copied().collect() };
@@ -1274,12 +1314,18 @@ impl TiledPanes {
                 };
                 let pane_has_guest_modal = pane.has_guest_modal_for_any_client();
                 if let PaneId::Terminal(terminal_pane_id) = kind {
+                    // the pane must fill the display; its content may leave the last row to
+                    // the session bar
                     let eligible = host_scroll_candidate
                         && !pane_has_guest_modal
+                        && pane.x() == 0
+                        && pane.y() == 0
+                        && pane.cols() == host_scroll_display_area.cols
+                        && pane.rows() == host_scroll_display_area.rows
                         && pane.get_content_x() == 0
                         && pane.get_content_y() == 0
-                        && pane.get_content_columns() == host_scroll_display_area.cols
-                        && pane.get_content_rows() == host_scroll_display_area.rows;
+                        && pane.get_content_columns() == host_scroll_display_area.cols;
+                    let content_rows = pane.get_content_rows();
                     crate::panes::host_scroll::apply(
                         pane,
                         *terminal_pane_id,
@@ -1289,7 +1335,7 @@ impl TiledPanes {
                         &mut self.host_scroll_primed,
                         &mut self.host_scroll_last_state,
                         eligible,
-                        host_scroll_display_area.rows,
+                        content_rows,
                     );
                 }
                 let mut pane_contents_and_ui = PaneContentsAndUi::new(
@@ -1416,6 +1462,31 @@ impl TiledPanes {
                                 .with_context(err_context)?;
                         }
                     }
+                }
+            }
+        }
+        // DevTools fork: the session bar, redrawn whenever the pane above it rendered
+        if let Some(bar_pane_id) = session_bar_pane_id {
+            if output.is_dirty() {
+                if let Some(pane) = self.panes.get(&bar_pane_id) {
+                    let session_name = self
+                        .default_mode_info
+                        .session_name
+                        .clone()
+                        .unwrap_or_default();
+                    let chunk = crate::panes::session_bar::session_bar_chunk(
+                        &session_name,
+                        pane.x(),
+                        pane.y() + pane.rows().saturating_sub(1),
+                        pane.cols(),
+                    );
+                    output
+                        .add_character_chunks_to_multiple_clients(
+                            vec![chunk],
+                            connected_clients.iter().copied(),
+                            None,
+                        )
+                        .with_context(err_context)?;
                 }
             }
         }

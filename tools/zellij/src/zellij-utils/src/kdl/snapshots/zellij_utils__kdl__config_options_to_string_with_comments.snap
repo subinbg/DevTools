@@ -366,6 +366,11 @@ web_sharing "disabled"
 // Default: true
 // host_scrollback false
  
+// Whether a session shows a one-line bar at the bottom with its name and the
+// key that returns to the dashboard
+// Default: true
+// session_bar false
+ 
 // How to handle a nested Zellij session detected inside a pane.
 // Options:
 //   - "ask" (Default — prompt with a modal)

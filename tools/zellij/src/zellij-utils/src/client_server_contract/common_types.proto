@@ -1230,6 +1230,7 @@ message Options {
   optional ThemeHue explicit_theme_hue = 69;
   optional bool dashboard = 70;
   optional bool host_scrollback = 71;
+  optional bool session_bar = 72;
 }
 
 enum OnForceClose {

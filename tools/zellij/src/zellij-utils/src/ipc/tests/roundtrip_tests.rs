@@ -519,6 +519,7 @@ fn test_client_messages() {
                 dangerously_enable_paste_buffer_read: Some(true),
                 dashboard: Some(false),
                 host_scrollback: Some(true),
+                session_bar: Some(false),
             }),
             layout: None,
             terminal_window_size: Size { rows: 80, cols: 42 },

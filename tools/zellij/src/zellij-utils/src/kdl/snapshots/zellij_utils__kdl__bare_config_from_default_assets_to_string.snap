@@ -43,4 +43,5 @@ mouse_hover_effects false
 mouse_hover_tips false
 dashboard true
 host_scrollback true
+session_bar true
 nested_session_handling "never"

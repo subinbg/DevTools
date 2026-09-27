@@ -414,6 +414,10 @@ dashboard true
 // go into the terminal's own scrollback and its scrollbar and mouse wheel keep working.
 host_scrollback true
 
+// Show a one-line bar at the bottom of a session with its name and the key that returns to
+// the dashboard.
+session_bar true
+
 // No frame around the pane: the pane is the whole terminal.
 pane_frames false
 

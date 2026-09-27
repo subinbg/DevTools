@@ -440,6 +440,13 @@ pub struct Options {
     #[clap(long, value_parser)]
     #[serde(default)]
     pub host_scrollback: Option<bool>,
+
+    /// Whether a session shows a one-line bar at the bottom with its name and the key that
+    /// returns to the dashboard
+    /// default is true
+    #[clap(long, value_parser)]
+    #[serde(default)]
+    pub session_bar: Option<bool>,
 }
 
 #[derive(ValueEnum, Deserialize, Serialize, Debug, Clone, Copy, PartialEq)]
@@ -618,6 +625,7 @@ impl Options {
             .or(self.dangerously_enable_paste_buffer_read);
         let dashboard = other.dashboard.or(self.dashboard);
         let host_scrollback = other.host_scrollback.or(self.host_scrollback);
+        let session_bar = other.session_bar.or(self.session_bar);
 
         Options {
             simplified_ui,
@@ -681,6 +689,7 @@ impl Options {
             dangerously_enable_paste_buffer_read,
             dashboard,
             host_scrollback,
+            session_bar,
         }
     }
 
@@ -793,6 +802,7 @@ impl Options {
             .or(self.dangerously_enable_paste_buffer_read);
         let dashboard = other.dashboard.or(self.dashboard);
         let host_scrollback = other.host_scrollback.or(self.host_scrollback);
+        let session_bar = other.session_bar.or(self.session_bar);
 
         Options {
             simplified_ui,
@@ -856,6 +866,7 @@ impl Options {
             dangerously_enable_paste_buffer_read,
             dashboard,
             host_scrollback,
+            session_bar,
         }
     }
 

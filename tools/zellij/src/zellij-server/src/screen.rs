@@ -1558,6 +1558,8 @@ pub(crate) struct Screen {
     session_serialization: bool,
     serialize_pane_viewport: bool,
     scrollback_lines_to_serialize: Option<usize>,
+    /// DevTools fork: sessions show a one-line bar with their name (see `session_bar`)
+    pub session_bar: bool,
     session_is_mirrored: bool,
     copy_options: CopyOptions,
     debug: bool,
@@ -1781,6 +1783,7 @@ impl Screen {
             session_serialization,
             serialize_pane_viewport,
             scrollback_lines_to_serialize,
+            session_bar: false,
             styled_underlines,
             osc8_hyperlinks,
             arrow_fonts,
@@ -4882,6 +4885,7 @@ impl Screen {
             self.web_server_ip,
             self.web_server_port,
         );
+        tab.set_session_bar(self.session_bar);
         for (client_id, mode_info) in &self.mode_info {
             tab.change_mode_info(mode_info.clone(), *client_id);
         }
@@ -8112,6 +8116,7 @@ pub(crate) fn screen_thread_main(
     let auto_layout = config_options.auto_layout.unwrap_or(true);
     let session_serialization = config_options.session_serialization.unwrap_or(true);
     let serialize_pane_viewport = config_options.serialize_pane_viewport.unwrap_or(false);
+    let session_bar = config_options.session_bar.unwrap_or(true);
     let scrollback_lines_to_serialize = config_options.scrollback_lines_to_serialize;
     let session_is_mirrored = config_options.mirror_session.unwrap_or(false);
     let layout_dir = config_options.layout_dir;
@@ -8232,6 +8237,7 @@ pub(crate) fn screen_thread_main(
     screen.host_theme_dark_styling = host_theme_dark_styling;
     screen.host_theme_light_styling = host_theme_light_styling;
     screen.paste_buffer_read_enabled = dangerously_enable_paste_buffer_read;
+    screen.session_bar = session_bar;
     screen.set_host_notification_protocol(host_notification_protocol);
     if explicit_theme_hue.is_some() {
         screen
