@@ -66,7 +66,7 @@ impl SessionRow {
                     .filter(|c| !c.is_empty())
                     .unwrap_or_else(|| pane.title.clone());
                 match &pane.cwd {
-                    Some(cwd) if !cwd.is_empty() => format!("{} · {}", what, cwd),
+                    Some(cwd) if !cwd.is_empty() => format!("{}  {}", what, cwd),
                     _ => what,
                 }
             },
@@ -91,6 +91,7 @@ pub enum Key {
     Backspace,
     Delete,
     Tab,
+    BackTab,
     Char(char),
     Ctrl(char),
     Other,
@@ -99,10 +100,7 @@ pub enum Key {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Mouse {
     /// The left button was pressed at this cell (0-based column and row).
-    Press {
-        x: usize,
-        y: usize,
-    },
+    Press { x: usize, y: usize },
     WheelUp,
     WheelDown,
 }
@@ -114,17 +112,83 @@ pub enum Command {
     Refresh,
     /// Attach to (or resurrect) the session; `full_history` reprints the pane's whole
     /// history into the host terminal even if it was printed before.
-    Open {
-        name: String,
-        full_history: bool,
-    },
-    New {
-        name: String,
-    },
+    Open { name: String, full_history: bool },
+    New { name: String },
     Terminate(String),
     Delete(String),
     Shutdown,
     Quit,
+}
+
+/// A single-line text input with a cursor.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct TextField {
+    chars: Vec<char>,
+    cursor: usize,
+    max_len: usize,
+}
+
+impl TextField {
+    pub fn new(text: &str, max_len: usize) -> Self {
+        let chars: Vec<char> = text.chars().collect();
+        let cursor = chars.len();
+        TextField {
+            chars,
+            cursor,
+            max_len,
+        }
+    }
+    pub fn text(&self) -> String {
+        self.chars.iter().collect()
+    }
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+    pub fn is_empty(&self) -> bool {
+        self.chars.is_empty()
+    }
+    /// Handles editing keys; returns true when the key was one of them.
+    pub fn handle_key(&mut self, key: &Key, accept: impl Fn(char) -> bool) -> bool {
+        match key {
+            Key::Left => self.cursor = self.cursor.saturating_sub(1),
+            Key::Right => self.cursor = (self.cursor + 1).min(self.chars.len()),
+            Key::Home | Key::Ctrl('a') => self.cursor = 0,
+            Key::End | Key::Ctrl('e') => self.cursor = self.chars.len(),
+            Key::Backspace => {
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                    self.chars.remove(self.cursor);
+                }
+            },
+            Key::Delete => {
+                if self.cursor < self.chars.len() {
+                    self.chars.remove(self.cursor);
+                }
+            },
+            Key::Ctrl('u') => {
+                self.chars.clear();
+                self.cursor = 0;
+            },
+            Key::Ctrl('w') => {
+                while self.cursor > 0 && self.chars[self.cursor - 1] == ' ' {
+                    self.cursor -= 1;
+                    self.chars.remove(self.cursor);
+                }
+                while self.cursor > 0 && self.chars[self.cursor - 1] != ' ' {
+                    self.cursor -= 1;
+                    self.chars.remove(self.cursor);
+                }
+            },
+            Key::Char(c) if accept(*c) => {
+                if self.chars.len() < self.max_len {
+                    self.chars.insert(self.cursor, *c);
+                    self.cursor += 1;
+                }
+            },
+            _ => return false,
+        }
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,13 +197,40 @@ pub enum Confirmable {
     Delete,
 }
 
+/// The focused element of a dialog. Dialogs with a text field start on the field; the
+/// buttons follow, in the order they are drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Focus {
+    Field,
+    /// Index of the focused button (0 = the primary action).
+    Button(usize),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Mode {
     List,
     Help,
-    NewSession { name: String },
-    Confirm { action: Confirmable, name: String },
-    Shutdown { typed: String },
+    NewSession { field: TextField, focus: Focus },
+    Confirm { action: Confirmable, name: String, focus: Focus },
+    Shutdown { field: TextField, focus: Focus },
+}
+
+/// Something a mouse click or a key can trigger.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    Open,
+    New,
+    Terminate,
+    Delete,
+    Refresh,
+    Help,
+    ShutdownPrompt,
+    Quit,
+    /// The primary button of the current dialog (Yes, Create, Shut down).
+    Primary,
+    /// The secondary button (No, Cancel, Close).
+    Cancel,
+    FocusField,
 }
 
 #[derive(Clone, Debug)]
@@ -149,11 +240,10 @@ struct Notice {
     shown_at: Instant,
 }
 
-/// Something the mouse can hit: a session row or a button that acts like a key press.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Hit {
     Row(usize),
-    Key(Key),
+    Action(Action),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -161,6 +251,26 @@ struct HitRegion {
     rect: Rect,
     hit: Hit,
 }
+
+/// A line of the session list: a section label or a session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ListLine {
+    Header(&'static str),
+    Session(usize),
+}
+
+// ---- palette (the terminal's 16 colors, so the dashboard follows its theme) ----
+const ACCENT: Color = Color::Ansi(4); // selection and focus background
+const ACCENT_TEXT: Color = Color::Ansi(15);
+const TEXT: Color = Color::Ansi(7);
+const BRIGHT: Color = Color::Ansi(15);
+const MUTED: Color = Color::Ansi(8);
+const RUNNING: Color = Color::Ansi(10);
+const KEY: Color = Color::Ansi(11);
+const INFO: Color = Color::Ansi(14);
+const WARN: Color = Color::Ansi(11);
+const DANGER: Color = Color::Ansi(9);
+const OK: Color = Color::Ansi(10);
 
 pub struct Dashboard {
     pub rows: Vec<SessionRow>,
@@ -225,20 +335,57 @@ impl Dashboard {
         self.clamp_selection();
     }
 
+    /// The list as drawn: section labels and sessions.
+    fn list_lines(&self) -> Vec<ListLine> {
+        let mut lines = vec![];
+        let running: Vec<usize> = (0..self.rows.len()).filter(|i| self.rows[*i].running).collect();
+        let saved: Vec<usize> = (0..self.rows.len()).filter(|i| !self.rows[*i].running).collect();
+        if !running.is_empty() {
+            lines.push(ListLine::Header("Running"));
+            lines.extend(running.into_iter().map(ListLine::Session));
+        }
+        if !saved.is_empty() {
+            if !lines.is_empty() {
+                lines.push(ListLine::Header(""));
+            }
+            lines.push(ListLine::Header("Saved"));
+            lines.extend(saved.into_iter().map(ListLine::Session));
+        }
+        lines
+    }
+
+    fn line_of_session(lines: &[ListLine], idx: usize) -> usize {
+        lines
+            .iter()
+            .position(|l| *l == ListLine::Session(idx))
+            .unwrap_or(0)
+    }
+
     fn clamp_selection(&mut self) {
         if self.rows.is_empty() {
             self.selected = 0;
-        } else if self.selected >= self.rows.len() {
+            self.scroll = 0;
+            return;
+        }
+        if self.selected >= self.rows.len() {
             self.selected = self.rows.len() - 1;
         }
+        let lines = self.list_lines();
         let visible = self.list_rows_visible.max(1);
-        if self.selected < self.scroll {
-            self.scroll = self.selected;
-        } else if self.selected >= self.scroll + visible {
-            self.scroll = self.selected + 1 - visible;
+        let line = Self::line_of_session(&lines, self.selected);
+        // keep the section label above the first session visible too
+        let top = if line > 0 && matches!(lines[line - 1], ListLine::Header(_)) {
+            line - 1
+        } else {
+            line
+        };
+        if top < self.scroll {
+            self.scroll = top;
+        } else if line >= self.scroll + visible {
+            self.scroll = line + 1 - visible;
         }
-        if self.scroll > 0 && self.scroll + visible > self.rows.len() {
-            self.scroll = self.rows.len().saturating_sub(visible);
+        if self.scroll > 0 && self.scroll + visible > lines.len() {
+            self.scroll = lines.len().saturating_sub(visible);
         }
     }
 
@@ -252,6 +399,8 @@ impl Dashboard {
         self.clamp_selection();
     }
 
+    // ------------------------------------------------------------------ input
+
     pub fn handle_key(&mut self, key: Key) -> Command {
         match self.mode.clone() {
             Mode::List => self.handle_list_key(key),
@@ -259,85 +408,171 @@ impl Dashboard {
                 self.mode = Mode::List;
                 Command::None
             },
-            Mode::NewSession { mut name } => match key {
-                Key::Esc | Key::Ctrl('c') | Key::Ctrl('q') => {
-                    self.mode = Mode::List;
-                    Command::None
-                },
-                Key::Enter => {
-                    let name = name.trim().to_string();
-                    if name.is_empty() {
-                        self.notify("A session needs a name", true);
-                        Command::None
-                    } else {
-                        Command::New { name }
-                    }
-                },
-                Key::Backspace => {
-                    name.pop();
-                    self.mode = Mode::NewSession { name };
-                    Command::None
-                },
-                Key::Ctrl('u') => {
-                    self.mode = Mode::NewSession {
-                        name: String::new(),
-                    };
-                    Command::None
-                },
-                Key::Char(c) if is_session_name_char(c) => {
-                    if name.chars().count() < 48 {
-                        name.push(c);
-                    }
-                    self.mode = Mode::NewSession { name };
-                    Command::None
-                },
-                _ => Command::None,
-            },
-            Mode::Confirm { action, name } => match key {
-                Key::Char('y') | Key::Char('Y') | Key::Enter => {
-                    self.mode = Mode::List;
-                    match action {
-                        Confirmable::Terminate => Command::Terminate(name),
-                        Confirmable::Delete => Command::Delete(name),
-                    }
-                },
-                Key::Char('n') | Key::Char('N') | Key::Esc | Key::Ctrl('c') | Key::Char('q') => {
-                    self.mode = Mode::List;
-                    Command::None
-                },
-                _ => Command::None,
-            },
-            Mode::Shutdown { mut typed } => match key {
-                Key::Esc | Key::Ctrl('c') | Key::Ctrl('q') => {
-                    self.mode = Mode::List;
-                    Command::None
-                },
-                Key::Enter => {
-                    if typed.trim().eq_ignore_ascii_case(SHUTDOWN_WORD) {
+            Mode::NewSession { mut field, focus } => {
+                match key {
+                    Key::Esc | Key::Ctrl('c') | Key::Ctrl('q') => {
                         self.mode = Mode::List;
-                        Command::Shutdown
-                    } else {
-                        self.notify(format!("Type '{}' to shut down", SHUTDOWN_WORD), true);
-                        self.mode = Mode::Shutdown {
-                            typed: String::new(),
+                        return Command::None;
+                    },
+                    Key::Enter => {
+                        return match focus {
+                            Focus::Field | Focus::Button(0) => self.create_session(&field),
+                            Focus::Button(_) => {
+                                self.mode = Mode::List;
+                                Command::None
+                            },
+                        };
+                    },
+                    Key::Tab | Key::Down => {
+                        let focus = match focus {
+                            Focus::Field => Focus::Button(0),
+                            Focus::Button(0) => Focus::Button(1),
+                            Focus::Button(_) => Focus::Field,
+                        };
+                        self.mode = Mode::NewSession { field, focus };
+                        return Command::None;
+                    },
+                    Key::BackTab | Key::Up => {
+                        let focus = match focus {
+                            Focus::Field => Focus::Button(1),
+                            Focus::Button(0) => Focus::Field,
+                            Focus::Button(_) => Focus::Button(0),
+                        };
+                        self.mode = Mode::NewSession { field, focus };
+                        return Command::None;
+                    },
+                    _ => {},
+                }
+                match focus {
+                    Focus::Field => {
+                        field.handle_key(&key, is_session_name_char);
+                        self.mode = Mode::NewSession { field, focus };
+                    },
+                    Focus::Button(b) => {
+                        let focus = match key {
+                            Key::Left | Key::Right => Focus::Button(1 - b.min(1)),
+                            _ => focus,
+                        };
+                        self.mode = Mode::NewSession { field, focus };
+                    },
+                }
+                Command::None
+            },
+            Mode::Confirm {
+                action,
+                name,
+                focus,
+            } => {
+                let yes = match action {
+                    Confirmable::Terminate => Command::Terminate(name.clone()),
+                    Confirmable::Delete => Command::Delete(name.clone()),
+                };
+                let button = match focus {
+                    Focus::Button(b) => b,
+                    Focus::Field => 0,
+                };
+                match key {
+                    Key::Char('y') | Key::Char('Y') => {
+                        self.mode = Mode::List;
+                        yes
+                    },
+                    Key::Char('n') | Key::Char('N') | Key::Esc | Key::Ctrl('c') | Key::Char('q') => {
+                        self.mode = Mode::List;
+                        Command::None
+                    },
+                    Key::Enter => {
+                        self.mode = Mode::List;
+                        if button == 0 {
+                            yes
+                        } else {
+                            Command::None
+                        }
+                    },
+                    Key::Left | Key::Right | Key::Tab | Key::BackTab | Key::Up | Key::Down => {
+                        self.mode = Mode::Confirm {
+                            action,
+                            name,
+                            focus: Focus::Button(1 - button.min(1)),
                         };
                         Command::None
-                    }
-                },
-                Key::Backspace => {
-                    typed.pop();
-                    self.mode = Mode::Shutdown { typed };
-                    Command::None
-                },
-                Key::Char(c) if c.is_ascii_alphabetic() => {
-                    if typed.len() < 8 {
-                        typed.push(c);
-                    }
-                    self.mode = Mode::Shutdown { typed };
-                    Command::None
-                },
-                _ => Command::None,
+                    },
+                    _ => Command::None,
+                }
             },
+            Mode::Shutdown { mut field, focus } => {
+                match key {
+                    Key::Esc | Key::Ctrl('c') | Key::Ctrl('q') => {
+                        self.mode = Mode::List;
+                        return Command::None;
+                    },
+                    Key::Enter => {
+                        return match focus {
+                            Focus::Field | Focus::Button(0) => self.confirm_shutdown(&field),
+                            Focus::Button(_) => {
+                                self.mode = Mode::List;
+                                Command::None
+                            },
+                        };
+                    },
+                    Key::Tab | Key::Down => {
+                        let focus = match focus {
+                            Focus::Field => Focus::Button(0),
+                            Focus::Button(0) => Focus::Button(1),
+                            Focus::Button(_) => Focus::Field,
+                        };
+                        self.mode = Mode::Shutdown { field, focus };
+                        return Command::None;
+                    },
+                    Key::BackTab | Key::Up => {
+                        let focus = match focus {
+                            Focus::Field => Focus::Button(1),
+                            Focus::Button(0) => Focus::Field,
+                            Focus::Button(_) => Focus::Button(0),
+                        };
+                        self.mode = Mode::Shutdown { field, focus };
+                        return Command::None;
+                    },
+                    _ => {},
+                }
+                match focus {
+                    Focus::Field => {
+                        field.handle_key(&key, |c| c.is_ascii_alphabetic());
+                        self.mode = Mode::Shutdown { field, focus };
+                    },
+                    Focus::Button(b) => {
+                        let focus = match key {
+                            Key::Left | Key::Right => Focus::Button(1 - b.min(1)),
+                            _ => focus,
+                        };
+                        self.mode = Mode::Shutdown { field, focus };
+                    },
+                }
+                Command::None
+            },
+        }
+    }
+
+    fn create_session(&mut self, field: &TextField) -> Command {
+        let name = field.text().trim().to_string();
+        if name.is_empty() {
+            self.notify("A session needs a name", true);
+            Command::None
+        } else {
+            Command::New { name }
+        }
+    }
+
+    fn confirm_shutdown(&mut self, field: &TextField) -> Command {
+        if field.text().trim().eq_ignore_ascii_case(SHUTDOWN_WORD) {
+            self.mode = Mode::List;
+            Command::Shutdown
+        } else {
+            self.notify(format!("Type {} to shut down", SHUTDOWN_WORD), true);
+            self.mode = Mode::Shutdown {
+                field: TextField::new("", 8),
+                focus: Focus::Field,
+            };
+            Command::None
         }
     }
 
@@ -349,49 +584,112 @@ impl Dashboard {
             Key::PageDown => self.move_selection(self.list_rows_visible as isize),
             Key::Home | Key::Char('g') => self.move_selection(isize::MIN / 2),
             Key::End | Key::Char('G') => self.move_selection(isize::MAX / 2),
-            Key::Enter | Key::Char('o') | Key::Char(' ') | Key::Right => {
-                return self.open_selected(false);
-            },
+            Key::Enter | Key::Char('o') | Key::Char(' ') => return self.act(Action::Open),
             Key::Char('O') => return self.open_selected(true),
-            Key::Char('n') | Key::Char('c') => {
-                self.mode = Mode::NewSession {
-                    name: self.suggested_name.clone(),
-                };
-            },
-            Key::Char('t') | Key::Char('x') => match self.selected_row() {
-                Some(row) if row.running => {
-                    self.mode = Mode::Confirm {
-                        action: Confirmable::Terminate,
-                        name: row.name.clone(),
-                    };
-                },
-                Some(row) => {
-                    let msg = format!("'{}' is not running", row.name);
-                    self.notify(msg, true);
-                },
-                None => {},
-            },
-            Key::Char('d') | Key::Delete => {
-                if let Some(row) = self.selected_row() {
-                    self.mode = Mode::Confirm {
-                        action: Confirmable::Delete,
-                        name: row.name.clone(),
-                    };
-                }
-            },
-            Key::Char('r') | Key::Char('R') | Key::Ctrl('r') => return Command::Refresh,
-            Key::Char('?') | Key::Char('h') => self.mode = Mode::Help,
-            Key::Char('Q') => {
-                self.mode = Mode::Shutdown {
-                    typed: String::new(),
-                };
-            },
+            Key::Char('n') | Key::Char('c') => return self.act(Action::New),
+            Key::Char('t') | Key::Char('x') => return self.act(Action::Terminate),
+            Key::Char('d') | Key::Delete => return self.act(Action::Delete),
+            Key::Char('r') | Key::Char('R') | Key::Ctrl('r') => return self.act(Action::Refresh),
+            Key::Char('?') | Key::Char('h') => return self.act(Action::Help),
+            Key::Char('Q') => return self.act(Action::ShutdownPrompt),
             Key::Char('q') | Key::Esc | Key::Ctrl('q') | Key::Ctrl('c') | Key::Ctrl('d') => {
-                return Command::Quit;
+                return self.act(Action::Quit);
             },
             _ => {},
         }
         Command::None
+    }
+
+    /// Runs an action from a key or a click.
+    fn act(&mut self, action: Action) -> Command {
+        match action {
+            Action::Open => self.open_selected(false),
+            Action::New => {
+                self.mode = Mode::NewSession {
+                    field: TextField::new(&self.suggested_name, 48),
+                    focus: Focus::Field,
+                };
+                Command::None
+            },
+            Action::Terminate => {
+                match self.selected_row() {
+                    Some(row) if row.running => {
+                        self.mode = Mode::Confirm {
+                            action: Confirmable::Terminate,
+                            name: row.name.clone(),
+                            focus: Focus::Button(0),
+                        };
+                    },
+                    Some(row) => {
+                        let msg = format!("{} is not running", row.name);
+                        self.notify(msg, true);
+                    },
+                    None => {},
+                }
+                Command::None
+            },
+            Action::Delete => {
+                if let Some(row) = self.selected_row() {
+                    self.mode = Mode::Confirm {
+                        action: Confirmable::Delete,
+                        name: row.name.clone(),
+                        focus: Focus::Button(1),
+                    };
+                }
+                Command::None
+            },
+            Action::Refresh => Command::Refresh,
+            Action::Help => {
+                self.mode = Mode::Help;
+                Command::None
+            },
+            Action::ShutdownPrompt => {
+                self.mode = Mode::Shutdown {
+                    field: TextField::new("", 8),
+                    focus: Focus::Field,
+                };
+                Command::None
+            },
+            Action::Quit => Command::Quit,
+            Action::Primary => match self.mode.clone() {
+                Mode::NewSession { field, .. } => self.create_session(&field),
+                Mode::Shutdown { field, .. } => self.confirm_shutdown(&field),
+                Mode::Confirm { action, name, .. } => {
+                    self.mode = Mode::List;
+                    match action {
+                        Confirmable::Terminate => Command::Terminate(name),
+                        Confirmable::Delete => Command::Delete(name),
+                    }
+                },
+                Mode::Help => {
+                    self.mode = Mode::List;
+                    Command::None
+                },
+                Mode::List => Command::None,
+            },
+            Action::Cancel => {
+                self.mode = Mode::List;
+                Command::None
+            },
+            Action::FocusField => {
+                match self.mode.clone() {
+                    Mode::NewSession { field, .. } => {
+                        self.mode = Mode::NewSession {
+                            field,
+                            focus: Focus::Field,
+                        }
+                    },
+                    Mode::Shutdown { field, .. } => {
+                        self.mode = Mode::Shutdown {
+                            field,
+                            focus: Focus::Field,
+                        }
+                    },
+                    _ => {},
+                }
+                Command::None
+            },
+        }
     }
 
     fn open_selected(&mut self, full_history: bool) -> Command {
@@ -400,12 +698,7 @@ impl Dashboard {
                 name: row.name.clone(),
                 full_history,
             },
-            None => {
-                self.mode = Mode::NewSession {
-                    name: self.suggested_name.clone(),
-                };
-                Command::None
-            },
+            None => self.act(Action::New),
         }
     }
 
@@ -442,9 +735,9 @@ impl Dashboard {
                             Command::None
                         }
                     },
-                    Some(Hit::Key(key)) => self.handle_key(key),
+                    Some(Hit::Action(action)) => self.act(action),
                     None => {
-                        // clicking outside a modal closes it
+                        // clicking outside a dialog closes it
                         if self.mode != Mode::List {
                             self.mode = Mode::List;
                         }
@@ -483,144 +776,108 @@ impl Dashboard {
         self.render_footer(&mut canvas);
         match self.mode.clone() {
             Mode::List => {},
-            Mode::Help => self.render_help(&mut canvas, list_rect),
-            Mode::NewSession { name } => self.render_new_session(&mut canvas, list_rect, &name),
-            Mode::Confirm { action, name } => {
-                self.render_confirm(&mut canvas, list_rect, action, &name)
+            Mode::Help => self.render_help(&mut canvas, body),
+            Mode::NewSession { field, focus } => {
+                self.render_new_session(&mut canvas, body, &field, focus)
             },
-            Mode::Shutdown { typed } => self.render_shutdown(&mut canvas, list_rect, &typed),
+            Mode::Confirm {
+                action,
+                name,
+                focus,
+            } => self.render_confirm(&mut canvas, body, action, &name, focus),
+            Mode::Shutdown { field, focus } => {
+                self.render_shutdown(&mut canvas, body, &field, focus)
+            },
         }
         canvas.to_ansi()
     }
 
     fn render_header(&mut self, canvas: &mut Canvas) {
         let cols = canvas.cols();
-        canvas.fill_row(0, ' ', Style::default().bg(Color::Ansi(0)));
-        let title = " ⬢ zellij ";
-        canvas.put(
-            0,
-            0,
-            title,
-            Style::default()
-                .fg(Color::Ansi(14))
-                .bold()
-                .bg(Color::Ansi(0)),
-        );
-        let mut x = title.chars().count() + 1;
+        canvas.fill_row(0, ' ', Style::default());
+        canvas.put(2, 0, "zellij", Style::default().fg(BRIGHT).bold());
         let notice = self
             .notice
             .clone()
             .filter(|n| n.shown_at.elapsed() < NOTICE_DURATION);
-        match notice {
-            Some(notice) => {
-                let style = if notice.is_error {
-                    Style::default()
-                        .fg(Color::Ansi(9))
-                        .bold()
-                        .bg(Color::Ansi(0))
-                } else {
-                    Style::default().fg(Color::Ansi(10)).bg(Color::Ansi(0))
-                };
-                canvas.put(x, 0, &notice.text, style);
-            },
+        let (text, style) = match notice {
+            Some(notice) if notice.is_error => (notice.text, Style::default().fg(DANGER).bold()),
+            Some(notice) => (notice.text, Style::default().fg(OK)),
             None => {
                 let running = self.rows.iter().filter(|r| r.running).count();
                 let saved = self.rows.len() - running;
-                let text = format!("{} running · {} saved", running, saved);
-                canvas.put(
-                    x,
-                    0,
-                    &text,
-                    Style::default().fg(Color::Ansi(7)).bg(Color::Ansi(0)),
-                );
-                x += text.chars().count();
-                let _ = x;
+                let text = match (running, saved) {
+                    (0, 0) => String::new(),
+                    (r, 0) => format!("{} running", r),
+                    (0, s) => format!("{} saved", s),
+                    (r, s) => format!("{} running · {} saved", r, s),
+                };
+                (text, Style::default().fg(MUTED))
             },
-        }
-        let power = "⏻ shut down ";
-        let power_w = power.chars().count();
-        if cols > power_w + 30 {
-            let px = cols - power_w - 1;
-            canvas.put(
-                px,
-                0,
-                power,
-                Style::default().fg(Color::Ansi(8)).bg(Color::Ansi(0)),
-            );
-            self.hits.push(HitRegion {
-                rect: Rect::new(px, 0, power_w, 1),
-                hit: Hit::Key(Key::Char('Q')),
-            });
+        };
+        let width = text.chars().count();
+        if width > 0 && cols > width + 2 {
+            canvas.put(cols - width - 2, 0, &text, style);
         }
     }
 
     fn render_footer(&mut self, canvas: &mut Canvas) {
         let y = canvas.lines() - 1;
         canvas.fill_row(y, ' ', Style::default());
-        let hints: Vec<(&str, &str, Key)> = match &self.mode {
+        let hints: Vec<(&str, &str, Option<Action>)> = match &self.mode {
             Mode::List => vec![
-                ("↑↓", "select", Key::Other),
-                ("⏎", "open", Key::Enter),
-                ("n", "new", Key::Char('n')),
-                ("t", "terminate", Key::Char('t')),
-                ("d", "delete", Key::Char('d')),
-                ("r", "refresh", Key::Char('r')),
-                ("?", "help", Key::Char('?')),
-                ("q", "quit", Key::Char('q')),
+                ("↑↓", "move", None),
+                ("⏎", "open", Some(Action::Open)),
+                ("n", "new", Some(Action::New)),
+                ("t", "terminate", Some(Action::Terminate)),
+                ("d", "delete", Some(Action::Delete)),
+                ("Q", "shut down", Some(Action::ShutdownPrompt)),
+                ("?", "help", Some(Action::Help)),
+                ("q", "quit", Some(Action::Quit)),
             ],
-            Mode::Help => vec![("any key", "back", Key::Esc)],
-            Mode::NewSession { .. } => {
-                vec![("⏎", "create", Key::Enter), ("esc", "cancel", Key::Esc)]
-            },
-            Mode::Confirm { .. } => vec![("y", "yes", Key::Char('y')), ("n", "no", Key::Char('n'))],
-            Mode::Shutdown { .. } => {
-                vec![("⏎", "confirm", Key::Enter), ("esc", "cancel", Key::Esc)]
-            },
+            Mode::Help => vec![("esc", "close", Some(Action::Cancel))],
+            Mode::NewSession { .. } => vec![
+                ("tab", "next", None),
+                ("⏎", "create", Some(Action::Primary)),
+                ("esc", "cancel", Some(Action::Cancel)),
+            ],
+            Mode::Confirm { .. } => vec![
+                ("←→", "choose", None),
+                ("⏎", "confirm", None),
+                ("esc", "cancel", Some(Action::Cancel)),
+            ],
+            Mode::Shutdown { .. } => vec![
+                ("tab", "next", None),
+                ("⏎", "confirm", Some(Action::Primary)),
+                ("esc", "cancel", Some(Action::Cancel)),
+            ],
         };
-        let mut x = 1;
+        let mut x = 2;
         let cols = canvas.cols();
         for (key, label, action) in hints {
             let width = key.chars().count() + 1 + label.chars().count();
             if x + width + 1 > cols {
                 break;
             }
-            canvas.put(x, y, key, Style::default().fg(Color::Ansi(11)).bold());
-            canvas.put(
-                x + key.chars().count() + 1,
-                y,
-                label,
-                Style::default().fg(Color::Ansi(8)),
-            );
-            if action != Key::Other {
+            canvas.put(x, y, key, Style::default().fg(KEY).bold());
+            canvas.put(x + key.chars().count() + 1, y, label, Style::default().fg(MUTED));
+            if let Some(action) = action {
                 self.hits.push(HitRegion {
                     rect: Rect::new(x, y, width, 1),
-                    hit: Hit::Key(action),
+                    hit: Hit::Action(action),
                 });
             }
             x += width + 3;
         }
-        if let Mode::List = self.mode {
-            let tip = "Ctrl q leaves a session";
-            let tw = tip.chars().count();
-            if x + tw + 1 <= cols {
-                canvas.put(
-                    cols - tw - 1,
-                    y,
-                    tip,
-                    Style::default().fg(Color::Ansi(8)).italic(),
-                );
-            }
-        }
     }
 
     fn render_list(&mut self, canvas: &mut Canvas, rect: Rect) {
-        let frame_style = Style::default().fg(Color::Ansi(10));
-        let title = format!(" Sessions ({}) ", self.rows.len());
+        let frame_style = Style::default().fg(Color::Ansi(2));
         canvas.frame(
             rect,
-            &title,
+            " Sessions ",
             frame_style,
-            Style::default().fg(Color::Ansi(10)).bold(),
+            Style::default().fg(BRIGHT).bold(),
         );
         let inner = rect.inner();
         if inner.h == 0 || inner.w < 10 {
@@ -630,26 +887,14 @@ impl Dashboard {
         self.clamp_selection();
 
         if self.rows.is_empty() {
-            let lines = [
-                "No sessions yet.",
-                "",
-                "Press n to create one. A session is a shell that keeps",
-                "running after you leave it with Ctrl q; its screen and",
-                "scrollback are saved so it can be opened again later.",
-            ];
-            for (i, line) in lines.iter().enumerate() {
-                if i + 1 < inner.h {
-                    canvas.put(
-                        inner.x + 2,
-                        inner.y + 1 + i,
-                        line,
-                        Style::default().fg(Color::Ansi(8)),
-                    );
-                }
-            }
+            let text = "No sessions yet.";
+            let x = inner.x + inner.w.saturating_sub(text.chars().count()) / 2;
+            let y = inner.y + (inner.h / 3).min(inner.h.saturating_sub(1));
+            canvas.put(x, y, text, Style::default().fg(MUTED));
             return;
         }
 
+        let lines = self.list_lines();
         let name_w = self
             .rows
             .iter()
@@ -657,170 +902,147 @@ impl Dashboard {
             .max()
             .unwrap_or(8)
             .clamp(8, 28);
-        for (line_idx, row_idx) in (self.scroll..self.rows.len()).enumerate() {
+        for (line_idx, list_line) in lines.iter().skip(self.scroll).enumerate() {
             if line_idx >= inner.h {
                 break;
             }
             let y = inner.y + line_idx;
-            let row = &self.rows[row_idx];
-            let selected = row_idx == self.selected;
-            let base = if selected {
-                Style::default().bg(Color::Ansi(4)).bold()
-            } else {
-                Style::default()
-            };
-            canvas.fill_row_range(y, inner.x, inner.w, ' ', base);
-
-            let (glyph, glyph_style) = if row.running {
-                ("●", base.fg(Color::Ansi(10)))
-            } else {
-                ("○", base.fg(Color::Ansi(8)))
-            };
-            canvas.put(inner.x + 1, y, glyph, glyph_style);
-            let name = fit(&row.name, name_w);
-            let name_style = if row.running {
-                base.fg(Color::Ansi(15))
-            } else {
-                base.fg(Color::Ansi(7))
-            };
-            canvas.put(inner.x + 3, y, &name, name_style);
-
-            let age = age_short(row.age);
-            let right = if row.running {
-                let clients = match row.clients {
-                    0 => "detached".to_string(),
-                    1 => "1 client".to_string(),
-                    n => format!("{} clients", n),
-                };
-                format!("{}  {:>4}", clients, age)
-            } else {
-                format!("saved  {:>4}", age)
-            };
-            let right_w = right.chars().count();
-            let summary_x = inner.x + 3 + name_w + 2;
-            if inner.x + inner.w > right_w + 1 {
-                let right_x = inner.x + inner.w - right_w - 1;
-                if right_x > summary_x + 4 {
-                    let summary = fit(&row.summary(), right_x - summary_x - 2);
-                    let summary_style = if selected {
-                        base.fg(Color::Ansi(15))
-                    } else if row.running {
-                        base.fg(Color::Ansi(14))
+            match list_line {
+                ListLine::Header(label) => {
+                    canvas.put(
+                        inner.x + 2,
+                        y,
+                        &label.to_uppercase(),
+                        Style::default().fg(MUTED).bold(),
+                    );
+                },
+                ListLine::Session(row_idx) => {
+                    let row = &self.rows[*row_idx];
+                    let selected = *row_idx == self.selected;
+                    let base = if selected {
+                        Style::default().bg(ACCENT)
                     } else {
-                        base.fg(Color::Ansi(8))
+                        Style::default()
                     };
-                    canvas.put(summary_x, y, &summary, summary_style);
-                }
-                canvas.put(right_x, y, &right, base.fg(Color::Ansi(8)));
+                    canvas.fill_row_range(y, inner.x, inner.w, ' ', base);
+
+                    let (glyph, glyph_style) = if row.running {
+                        ("●", base.fg(RUNNING))
+                    } else {
+                        ("○", base.fg(MUTED))
+                    };
+                    canvas.put(inner.x + 2, y, glyph, glyph_style);
+                    let name_style = if selected {
+                        base.fg(ACCENT_TEXT).bold()
+                    } else if row.running {
+                        base.fg(BRIGHT)
+                    } else {
+                        base.fg(TEXT)
+                    };
+                    canvas.put(inner.x + 4, y, &fit(&row.name, name_w), name_style);
+
+                    let age = age_short(row.age);
+                    let right = if row.running {
+                        match row.clients {
+                            0 => format!("{:>5}", age),
+                            1 => format!("1 terminal  {:>5}", age),
+                            n => format!("{} terminals  {:>5}", n, age),
+                        }
+                    } else {
+                        format!("{:>5}", age)
+                    };
+                    let right_w = right.chars().count();
+                    let summary_x = inner.x + 4 + name_w + 2;
+                    if inner.x + inner.w > right_w + 2 {
+                        let right_x = inner.x + inner.w - right_w - 2;
+                        if right_x > summary_x + 4 {
+                            let summary = fit(&row.summary(), right_x - summary_x - 2);
+                            let summary_style = if selected {
+                                base.fg(ACCENT_TEXT)
+                            } else {
+                                base.fg(MUTED)
+                            };
+                            canvas.put(summary_x, y, &summary, summary_style);
+                        }
+                        let right_style = if selected {
+                            base.fg(ACCENT_TEXT)
+                        } else {
+                            base.fg(MUTED)
+                        };
+                        canvas.put(right_x, y, &right, right_style);
+                    }
+                    self.hits.push(HitRegion {
+                        rect: Rect::new(inner.x, y, inner.w, 1),
+                        hit: Hit::Row(*row_idx),
+                    });
+                },
             }
-            self.hits.push(HitRegion {
-                rect: Rect::new(inner.x, y, inner.w, 1),
-                hit: Hit::Row(row_idx),
-            });
         }
-        if self.rows.len() > inner.h {
-            let more = format!(
-                " {}-{} of {} ",
-                self.scroll + 1,
-                (self.scroll + inner.h).min(self.rows.len()),
-                self.rows.len()
-            );
+        if lines.len() > inner.h {
+            let more = format!(" {} more ", lines.len() - inner.h - self.scroll.min(lines.len() - inner.h));
             let mw = more.chars().count();
-            if rect.w > mw + 4 {
-                canvas.put(
-                    rect.x + rect.w - mw - 2,
-                    rect.y + rect.h - 1,
-                    &more,
-                    frame_style,
-                );
+            if rect.w > mw + 4 && lines.len() > inner.h + self.scroll {
+                canvas.put(rect.x + rect.w - mw - 2, rect.y + rect.h - 1, &more, frame_style);
             }
         }
     }
 
     fn render_details(&mut self, canvas: &mut Canvas, rect: Rect) {
-        let frame_style = Style::default().fg(Color::Ansi(8));
-        canvas.frame(
-            rect,
-            " Details ",
-            frame_style,
-            Style::default().fg(Color::Ansi(7)).bold(),
-        );
+        let frame_style = Style::default().fg(MUTED);
+        let row = self.selected_row().cloned();
+        let title = match &row {
+            Some(row) => format!(" {} ", row.name),
+            None => String::new(),
+        };
+        canvas.frame(rect, &title, frame_style, Style::default().fg(BRIGHT).bold());
         let inner = rect.inner();
         if inner.w < 12 || inner.h < 3 {
             return;
         }
-        let row = match self.selected_row() {
-            Some(row) => row.clone(),
-            None => return,
+        let Some(row) = row else {
+            return;
         };
         let mut y = inner.y;
-        let x = inner.x + 1;
-        let w = inner.w.saturating_sub(2);
+        let x = inner.x + 2;
+        let w = inner.w.saturating_sub(4);
         let put = |canvas: &mut Canvas, y: &mut usize, text: &str, style: Style| {
             if *y < inner.y + inner.h {
                 canvas.put(x, *y, &fit(text, w), style);
                 *y += 1;
             }
         };
-        put(
-            canvas,
-            &mut y,
-            &row.name,
-            Style::default().fg(Color::Ansi(15)).bold(),
-        );
         if row.running {
-            let clients = match row.clients {
+            let attached = match row.clients {
                 0 => "nobody attached".to_string(),
-                1 => "1 client attached".to_string(),
-                n => format!("{} clients attached", n),
+                1 => "1 terminal attached".to_string(),
+                n => format!("{} terminals attached", n),
             };
-            put(
-                canvas,
-                &mut y,
-                &format!(
-                    "● running · {} · started {} ago",
-                    clients,
-                    age_long(row.age)
-                ),
-                Style::default().fg(Color::Ansi(10)),
-            );
+            put(canvas, &mut y, &format!("● Running · {}", attached), Style::default().fg(RUNNING));
+            put(canvas, &mut y, &format!("Started {} ago", age_long(row.age)), Style::default().fg(MUTED));
         } else {
-            put(
-                canvas,
-                &mut y,
-                &format!("○ stopped · screen saved {} ago", age_long(row.age)),
-                Style::default().fg(Color::Ansi(8)),
-            );
+            put(canvas, &mut y, "○ Saved · opens with its screen restored", Style::default().fg(TEXT));
+            put(canvas, &mut y, &format!("Last saved {} ago", age_long(row.age)), Style::default().fg(MUTED));
         }
         y += 1;
-        if row.tabs.is_empty() {
-            put(
-                canvas,
-                &mut y,
-                "No pane information yet.",
-                Style::default().fg(Color::Ansi(8)),
-            );
-        }
         for (tab_idx, tab) in row.tabs.iter().enumerate() {
-            let marker = if tab.active { "▸" } else { " " };
-            let tab_line = if row.tabs.len() > 1 || !tab.name.is_empty() {
-                format!("{} Tab {} · {}", marker, tab_idx + 1, tab.name)
+            let label = if tab.name.is_empty() {
+                format!("Tab {}", tab_idx + 1)
             } else {
-                format!("{} Tab {}", marker, tab_idx + 1)
+                format!("Tab {} · {}", tab_idx + 1, tab.name)
             };
-            let tab_style = if tab.active {
-                Style::default().fg(Color::Ansi(7)).bold()
+            let style = if tab.active {
+                Style::default().fg(BRIGHT).bold()
             } else {
-                Style::default().fg(Color::Ansi(8))
+                Style::default().fg(MUTED).bold()
             };
-            put(canvas, &mut y, &tab_line, tab_style);
+            put(canvas, &mut y, &label, style);
             for pane in &tab.panes {
                 let what = pane
                     .command
                     .clone()
                     .filter(|c| !c.is_empty())
                     .unwrap_or_else(|| pane.title.clone());
-                let mut line = format!("    {}", what);
+                let mut line = format!("   {}", what);
                 if let Some(cwd) = &pane.cwd {
                     if !cwd.is_empty() {
                         line.push_str("   ");
@@ -828,39 +1050,20 @@ impl Dashboard {
                     }
                 }
                 if pane.exited {
-                    line.push_str("   (exited)");
+                    line.push_str("   (finished)");
                 }
                 let style = if pane.focused {
-                    Style::default().fg(Color::Ansi(14))
+                    Style::default().fg(INFO)
                 } else {
-                    Style::default().fg(Color::Ansi(7))
+                    Style::default().fg(TEXT)
                 };
                 put(canvas, &mut y, &line, style);
             }
-        }
-        y += 1;
-        let hint = if row.running {
-            "⏎ open · t terminate (keeps the screen) · d delete"
-        } else {
-            "⏎ open (restores the screen) · d delete"
-        };
-        put(
-            canvas,
-            &mut y,
-            hint,
-            Style::default().fg(Color::Ansi(8)).italic(),
-        );
-        if row.running {
-            put(
-                canvas,
-                &mut y,
-                "O open and reprint the whole history",
-                Style::default().fg(Color::Ansi(8)).italic(),
-            );
+            y += 1;
         }
     }
 
-    fn modal_rect(&self, over: Rect, width: usize, height: usize) -> Rect {
+    fn dialog_rect(&self, over: Rect, width: usize, height: usize) -> Rect {
         let w = width.min(over.w.saturating_sub(2)).max(10);
         let h = height.min(over.h.saturating_sub(2)).max(3);
         let x = over.x + (over.w.saturating_sub(w)) / 2;
@@ -868,230 +1071,243 @@ impl Dashboard {
         Rect::new(x, y, w, h)
     }
 
-    fn render_modal_frame(&mut self, canvas: &mut Canvas, rect: Rect, title: &str, color: Color) {
+    fn render_dialog_frame(&mut self, canvas: &mut Canvas, rect: Rect, title: &str, color: Color) {
         canvas.clear_rect(rect, Style::default());
         canvas.frame(
             rect,
-            title,
+            &format!(" {} ", title),
             Style::default().fg(color),
             Style::default().fg(color).bold(),
         );
     }
 
+    /// Draws centered buttons; the focused one is highlighted.
     fn render_buttons(
         &mut self,
         canvas: &mut Canvas,
         y: usize,
         rect: Rect,
-        buttons: &[(&str, Key, Color)],
+        buttons: &[(&str, Action, Color)],
+        focused: Option<usize>,
     ) {
         let total: usize = buttons
             .iter()
             .map(|(label, _, _)| label.chars().count() + 4)
             .sum::<usize>()
-            + (buttons.len().saturating_sub(1)) * 2;
+            + buttons.len().saturating_sub(1) * 3;
         let mut x = rect.x + rect.w.saturating_sub(total) / 2;
-        for (label, key, color) in buttons {
-            let text = format!("[ {} ]", label);
+        for (i, (label, action, color)) in buttons.iter().enumerate() {
+            let text = format!("  {}  ", label);
             let width = text.chars().count();
-            canvas.put(x, y, &text, Style::default().fg(*color).bold());
+            let style = if focused == Some(i) {
+                Style::default().bg(*color).fg(Color::Ansi(0)).bold()
+            } else {
+                Style::default().fg(*color)
+            };
+            canvas.put(x, y, &text, style);
             self.hits.push(HitRegion {
                 rect: Rect::new(x, y, width, 1),
-                hit: Hit::Key(key.clone()),
+                hit: Hit::Action(*action),
             });
-            x += width + 2;
+            x += width + 3;
         }
     }
 
-    fn render_confirm(&mut self, canvas: &mut Canvas, over: Rect, action: Confirmable, name: &str) {
+    /// Draws a text field with its cursor; highlighted when focused.
+    fn render_field(
+        &mut self,
+        canvas: &mut Canvas,
+        x: usize,
+        y: usize,
+        width: usize,
+        field: &TextField,
+        focused: bool,
+    ) {
+        let style = if focused {
+            Style::default().bg(MUTED).fg(BRIGHT)
+        } else {
+            Style::default().bg(Color::Ansi(0)).fg(TEXT)
+        };
+        let text = field.text();
+        canvas.put(x, y, &fit(&format!(" {}", text), width), style);
+        if focused {
+            let cursor_x = x + 1 + field.cursor().min(width.saturating_sub(2));
+            let under = text.chars().nth(field.cursor()).unwrap_or(' ');
+            canvas.put(cursor_x, y, &under.to_string(), Style::default().bg(BRIGHT).fg(Color::Ansi(0)));
+        }
+        self.hits.push(HitRegion {
+            rect: Rect::new(x, y, width, 1),
+            hit: Hit::Action(Action::FocusField),
+        });
+    }
+
+    fn render_confirm(
+        &mut self,
+        canvas: &mut Canvas,
+        over: Rect,
+        action: Confirmable,
+        name: &str,
+        focus: Focus,
+    ) {
         let (title, lines, color): (&str, Vec<String>, Color) = match action {
             Confirmable::Terminate => (
-                " Terminate session ",
+                "Terminate session",
                 vec![
-                    format!("Terminate '{}'?", name),
+                    format!("Stop {}?", name),
                     String::new(),
-                    "Its programs are stopped. The screen and the whole".to_string(),
-                    "scrollback stay saved, so the session can be opened".to_string(),
-                    "again later with everything it showed.".to_string(),
+                    "Its programs end. The screen and scrollback stay saved,".to_string(),
+                    "so it can be opened again later just as it looked.".to_string(),
                 ],
-                Color::Ansi(11),
+                WARN,
             ),
             Confirmable::Delete => (
-                " Delete session ",
+                "Delete session",
                 vec![
-                    format!("Delete '{}'?", name),
+                    format!("Delete {}?", name),
                     String::new(),
-                    "This stops the session if it is running and throws".to_string(),
-                    "away its saved screen. It cannot be opened again.".to_string(),
+                    "It is stopped if it runs, and its saved screen is thrown".to_string(),
+                    "away. This cannot be undone.".to_string(),
                 ],
-                Color::Ansi(9),
+                DANGER,
             ),
         };
-        let rect = self.modal_rect(over, 58, lines.len() + 5);
-        self.render_modal_frame(canvas, rect, title, color);
+        let rect = self.dialog_rect(over, 60, lines.len() + 5);
+        self.render_dialog_frame(canvas, rect, title, color);
         let inner = rect.inner();
         for (i, line) in lines.iter().enumerate() {
-            if i + 1 < inner.h {
+            if i + 2 < inner.h {
                 let style = if i == 0 {
-                    Style::default().bold()
+                    Style::default().fg(BRIGHT).bold()
                 } else {
-                    Style::default().fg(Color::Ansi(7))
+                    Style::default().fg(TEXT)
                 };
-                canvas.put(
-                    inner.x + 2,
-                    inner.y + i,
-                    &fit(line, inner.w.saturating_sub(4)),
-                    style,
-                );
+                canvas.put(inner.x + 2, inner.y + i, &fit(line, inner.w.saturating_sub(4)), style);
             }
         }
-        let y = inner.y + inner.h - 1;
+        let focused = match focus {
+            Focus::Button(b) => Some(b),
+            Focus::Field => Some(0),
+        };
+        let (yes_label, cancel_label) = match action {
+            Confirmable::Terminate => ("Terminate", "Keep running"),
+            Confirmable::Delete => ("Delete", "Cancel"),
+        };
         self.render_buttons(
             canvas,
-            y,
+            inner.y + inner.h - 1,
             inner,
-            &[
-                ("y  Yes", Key::Char('y'), color),
-                ("n  No", Key::Char('n'), Color::Ansi(7)),
-            ],
+            &[(yes_label, Action::Primary, color), (cancel_label, Action::Cancel, TEXT)],
+            focused,
         );
     }
 
-    fn render_new_session(&mut self, canvas: &mut Canvas, over: Rect, name: &str) {
-        let rect = self.modal_rect(over, 58, 8);
-        self.render_modal_frame(canvas, rect, " New session ", Color::Ansi(14));
+    fn render_new_session(&mut self, canvas: &mut Canvas, over: Rect, field: &TextField, focus: Focus) {
+        let rect = self.dialog_rect(over, 60, 9);
+        self.render_dialog_frame(canvas, rect, "New session", INFO);
         let inner = rect.inner();
-        canvas.put(
-            inner.x + 2,
-            inner.y,
-            "Name",
-            Style::default().fg(Color::Ansi(7)),
-        );
+        canvas.put(inner.x + 2, inner.y, "Name", Style::default().fg(TEXT));
         let field_w = inner.w.saturating_sub(4);
-        let field = format!(
-            "{:<width$}",
-            fit(name, field_w.saturating_sub(1)),
-            width = field_w
-        );
-        canvas.put(inner.x + 2, inner.y + 1, &field, Style::default().reverse());
-        let cursor_x = inner.x + 2 + name.chars().count().min(field_w.saturating_sub(1));
-        canvas.put(
-            cursor_x,
-            inner.y + 1,
-            "▏",
-            Style::default().reverse().fg(Color::Ansi(14)),
-        );
+        self.render_field(canvas, inner.x + 2, inner.y + 1, field_w, field, focus == Focus::Field);
         canvas.put(
             inner.x + 2,
             inner.y + 3,
-            &fit(
-                "Letters, digits, '-', '_' and '.'. The session opens",
-                inner.w.saturating_sub(4),
-            ),
-            Style::default().fg(Color::Ansi(8)),
+            &fit("The session starts in the folder this dashboard was", inner.w.saturating_sub(4)),
+            Style::default().fg(MUTED),
         );
         canvas.put(
             inner.x + 2,
             inner.y + 4,
-            &fit(
-                "in the directory this dashboard was started from.",
-                inner.w.saturating_sub(4),
-            ),
-            Style::default().fg(Color::Ansi(8)),
+            &fit("opened from.", inner.w.saturating_sub(4)),
+            Style::default().fg(MUTED),
         );
-        let y = inner.y + inner.h - 1;
+        let focused = match focus {
+            Focus::Button(b) => Some(b),
+            Focus::Field => None,
+        };
         self.render_buttons(
             canvas,
-            y,
+            inner.y + inner.h - 1,
             inner,
-            &[
-                ("⏎  Create", Key::Enter, Color::Ansi(10)),
-                ("esc  Cancel", Key::Esc, Color::Ansi(7)),
-            ],
+            &[("Create", Action::Primary, OK), ("Cancel", Action::Cancel, TEXT)],
+            focused,
         );
     }
 
-    fn render_shutdown(&mut self, canvas: &mut Canvas, over: Rect, typed: &str) {
+    fn render_shutdown(&mut self, canvas: &mut Canvas, over: Rect, field: &TextField, focus: Focus) {
         let running = self.rows.iter().filter(|r| r.running).count();
-        let rect = self.modal_rect(over, 60, 10);
-        self.render_modal_frame(canvas, rect, " Shut down zellij ", Color::Ansi(9));
+        let rect = self.dialog_rect(over, 60, 11);
+        self.render_dialog_frame(canvas, rect, "Shut down", DANGER);
         let inner = rect.inner();
+        let first = match running {
+            0 => "No session is running; this just closes the dashboard.".to_string(),
+            1 => "This stops the running session and closes the dashboard.".to_string(),
+            n => format!("This stops all {} running sessions and closes the dashboard.", n),
+        };
         let lines = [
-            format!(
-                "This terminates all {} running session(s) and closes",
-                running
-            ),
-            "the dashboard. Every screen and scrollback is saved first,".to_string(),
-            "so the sessions can be opened again later.".to_string(),
+            first,
+            "Every screen and scrollback is saved first, so the sessions".to_string(),
+            "can be opened again later.".to_string(),
         ];
         for (i, line) in lines.iter().enumerate() {
-            canvas.put(
-                inner.x + 2,
-                inner.y + i,
-                &fit(line, inner.w.saturating_sub(4)),
-                Style::default().fg(Color::Ansi(7)),
-            );
+            canvas.put(inner.x + 2, inner.y + i, &fit(line, inner.w.saturating_sub(4)), Style::default().fg(TEXT));
         }
-        let prompt = format!("Type  {}  and press Enter:", SHUTDOWN_WORD);
-        canvas.put(inner.x + 2, inner.y + 4, &prompt, Style::default().bold());
-        let field = format!("{:<8}", typed);
-        canvas.put(inner.x + 2, inner.y + 5, &field, Style::default().reverse());
-        let y = inner.y + inner.h - 1;
+        canvas.put(
+            inner.x + 2,
+            inner.y + 4,
+            &format!("Type {} to confirm", SHUTDOWN_WORD),
+            Style::default().fg(BRIGHT).bold(),
+        );
+        self.render_field(canvas, inner.x + 2, inner.y + 5, 12, field, focus == Focus::Field);
+        let focused = match focus {
+            Focus::Button(b) => Some(b),
+            Focus::Field => None,
+        };
         self.render_buttons(
             canvas,
-            y,
+            inner.y + inner.h - 1,
             inner,
-            &[
-                ("⏎  Shut down", Key::Enter, Color::Ansi(9)),
-                ("esc  Cancel", Key::Esc, Color::Ansi(7)),
-            ],
+            &[("Shut down", Action::Primary, DANGER), ("Cancel", Action::Cancel, TEXT)],
+            focused,
         );
     }
 
     fn render_help(&mut self, canvas: &mut Canvas, over: Rect) {
         let entries: Vec<(&str, &str)> = vec![
-            ("↑ ↓  j k", "move the selection"),
-            ("⏎  o  space", "open the session (or resurrect a saved one)"),
-            ("O", "open and reprint its whole history into this terminal"),
-            (
-                "n",
-                "new session (named after the prompt, in this directory)",
-            ),
-            (
-                "t  x",
-                "terminate: stop its programs, keep the saved screen",
-            ),
-            ("d  del", "delete: stop it and throw the saved screen away"),
-            ("r", "refresh the list (it also refreshes every 2 seconds)"),
-            ("Q", "shut down: terminate every session, then quit"),
-            ("q  esc", "quit the dashboard; sessions keep running"),
+            ("↑ ↓  j k", "move"),
+            ("⏎  o  space", "open the session (a saved one comes back with its screen)"),
+            ("O", "open it and print its whole scrollback into this terminal"),
+            ("n", "new session"),
+            ("t  x", "terminate: stop its programs, keep the saved screen"),
+            ("d", "delete: stop it and throw the saved screen away"),
+            ("r", "refresh (the list also refreshes on its own)"),
+            ("Q", "shut down: stop every session, then quit"),
+            ("q  esc", "quit; sessions keep running"),
             ("", ""),
-            ("Ctrl q", "inside a session: leave it and come back here"),
-            (
-                "mouse",
-                "click a session to select it, click again to open it",
-            ),
+            ("Ctrl q", "inside a session: come back here"),
+            ("mouse", "click a session to select it, click again to open it"),
         ];
-        let rect = self.modal_rect(over, 70, entries.len() + 3);
-        self.render_modal_frame(canvas, rect, " Keys ", Color::Ansi(14));
+        let rect = self.dialog_rect(over, 72, entries.len() + 4);
+        self.render_dialog_frame(canvas, rect, "Help", INFO);
         let inner = rect.inner();
         for (i, (keys, text)) in entries.iter().enumerate() {
-            if i >= inner.h {
+            if i + 2 >= inner.h {
                 break;
             }
-            canvas.put(
-                inner.x + 2,
-                inner.y + i,
-                keys,
-                Style::default().fg(Color::Ansi(11)).bold(),
-            );
+            canvas.put(inner.x + 2, inner.y + i, keys, Style::default().fg(KEY).bold());
             canvas.put(
                 inner.x + 15,
                 inner.y + i,
                 &fit(text, inner.w.saturating_sub(17)),
-                Style::default().fg(Color::Ansi(7)),
+                Style::default().fg(TEXT),
             );
         }
+        self.render_buttons(
+            canvas,
+            inner.y + inner.h - 1,
+            inner,
+            &[("Close", Action::Cancel, INFO)],
+            Some(0),
+        );
     }
 }
 
@@ -1184,13 +1400,29 @@ mod tests {
 
     fn dashboard() -> Dashboard {
         let mut d = Dashboard::new(120, 30);
-        d.set_rows(vec![
-            row("alpha", true),
-            row("beta", true),
-            row("gamma", false),
-        ]);
+        d.set_rows(vec![row("alpha", true), row("beta", true), row("gamma", false)]);
         d.set_suggested_name("fresh-name".to_string());
         d
+    }
+
+    fn type_text(d: &mut Dashboard, text: &str) {
+        for c in text.chars() {
+            d.handle_key(Key::Char(c));
+        }
+    }
+
+    fn field_text(d: &Dashboard) -> String {
+        match &d.mode {
+            Mode::NewSession { field, .. } | Mode::Shutdown { field, .. } => field.text(),
+            _ => panic!("no field in {:?}", d.mode),
+        }
+    }
+
+    fn focus(d: &Dashboard) -> Focus {
+        match &d.mode {
+            Mode::NewSession { focus, .. } | Mode::Shutdown { focus, .. } | Mode::Confirm { focus, .. } => *focus,
+            _ => panic!("no focus in {:?}", d.mode),
+        }
     }
 
     #[test]
@@ -1208,6 +1440,17 @@ mod tests {
         assert_eq!(d.selected, 2);
         d.handle_key(Key::Up);
         assert_eq!(d.selected, 1);
+    }
+
+    #[test]
+    fn left_and_right_do_nothing_in_the_list() {
+        let mut d = dashboard();
+        assert_eq!(d.handle_key(Key::Right), Command::None);
+        assert_eq!(d.handle_key(Key::Left), Command::None);
+        assert_eq!(d.mode, Mode::List);
+        let mut empty = Dashboard::new(80, 24);
+        assert_eq!(empty.handle_key(Key::Right), Command::None);
+        assert_eq!(empty.mode, Mode::List);
     }
 
     #[test]
@@ -1250,49 +1493,78 @@ mod tests {
         let mut d = Dashboard::new(80, 24);
         d.set_suggested_name("first".to_string());
         assert_eq!(d.handle_key(Key::Enter), Command::None);
-        assert_eq!(
-            d.mode,
-            Mode::NewSession {
-                name: "first".to_string()
-            }
-        );
+        assert!(matches!(d.mode, Mode::NewSession { .. }));
+        assert_eq!(field_text(&d), "first");
     }
 
     #[test]
-    fn new_session_prompt_edits_and_validates() {
+    fn text_field_edits_with_a_cursor() {
+        let mut f = TextField::new("abc", 10);
+        assert_eq!(f.cursor(), 3);
+        f.handle_key(&Key::Left, |_| true);
+        f.handle_key(&Key::Left, |_| true);
+        f.handle_key(&Key::Char('X'), |_| true);
+        assert_eq!(f.text(), "aXbc");
+        assert_eq!(f.cursor(), 2);
+        f.handle_key(&Key::Delete, |_| true);
+        assert_eq!(f.text(), "aXc");
+        f.handle_key(&Key::Backspace, |_| true);
+        assert_eq!(f.text(), "ac");
+        f.handle_key(&Key::Home, |_| true);
+        f.handle_key(&Key::Char('-'), |_| true);
+        assert_eq!(f.text(), "-ac");
+        f.handle_key(&Key::End, |_| true);
+        f.handle_key(&Key::Char('!'), |c| c != '!');
+        assert_eq!(f.text(), "-ac", "rejected characters are ignored");
+        f.handle_key(&Key::Ctrl('u'), |_| true);
+        assert!(f.is_empty());
+        assert!(!f.handle_key(&Key::Tab, |_| true), "tab is not an editing key");
+    }
+
+    #[test]
+    fn new_session_prompt_edits_validates_and_navigates() {
         let mut d = dashboard();
         d.handle_key(Key::Char('n'));
-        assert_eq!(
-            d.mode,
-            Mode::NewSession {
-                name: "fresh-name".to_string()
-            }
-        );
+        assert_eq!(field_text(&d), "fresh-name");
+        assert_eq!(focus(&d), Focus::Field);
         d.handle_key(Key::Ctrl('u'));
-        for c in "my session/1".chars() {
-            d.handle_key(Key::Char(c));
-        }
-        assert_eq!(
-            d.mode,
-            Mode::NewSession {
-                name: "mysession1".to_string()
-            },
-            "spaces and slashes are dropped"
-        );
+        type_text(&mut d, "my session/1");
+        assert_eq!(field_text(&d), "mysession1", "spaces and slashes are dropped");
+        d.handle_key(Key::Left);
         d.handle_key(Key::Backspace);
+        assert_eq!(field_text(&d), "mysessio1", "the cursor moves with the arrows");
+        d.handle_key(Key::End);
+        d.handle_key(Key::Backspace);
+        assert_eq!(field_text(&d), "mysessio");
+        // tab moves to the buttons; enter on Cancel closes without creating
+        d.handle_key(Key::Tab);
+        assert_eq!(focus(&d), Focus::Button(0));
+        d.handle_key(Key::Right);
+        assert_eq!(focus(&d), Focus::Button(1));
+        assert_eq!(d.handle_key(Key::Enter), Command::None);
+        assert_eq!(d.mode, Mode::List);
+        // enter in the field or on Create creates
+        d.handle_key(Key::Char('n'));
         assert_eq!(
             d.handle_key(Key::Enter),
             Command::New {
-                name: "mysession".to_string()
+                name: "fresh-name".to_string()
             }
         );
+        d.handle_key(Key::Esc); // the runner would have left; start over
         d.handle_key(Key::Char('n'));
-        d.handle_key(Key::Ctrl('u'));
+        d.handle_key(Key::Down);
+        assert_eq!(focus(&d), Focus::Button(0));
         assert_eq!(
             d.handle_key(Key::Enter),
-            Command::None,
-            "an empty name is refused"
+            Command::New {
+                name: "fresh-name".to_string()
+            }
         );
+        d.handle_key(Key::Esc);
+        d.handle_key(Key::Char('n'));
+        d.handle_key(Key::Ctrl('u'));
+        assert_eq!(d.handle_key(Key::Enter), Command::None, "an empty name is refused");
         assert!(matches!(d.mode, Mode::NewSession { .. }));
         d.handle_key(Key::Esc);
         assert_eq!(d.mode, Mode::List);
@@ -1302,25 +1574,21 @@ mod tests {
     fn terminate_and_delete_need_confirmation() {
         let mut d = dashboard();
         d.handle_key(Key::Char('t'));
-        assert_eq!(
-            d.mode,
-            Mode::Confirm {
-                action: Confirmable::Terminate,
-                name: "alpha".to_string()
-            }
-        );
+        assert!(matches!(d.mode, Mode::Confirm { action: Confirmable::Terminate, .. }));
+        assert_eq!(focus(&d), Focus::Button(0), "terminate starts on its button");
         assert_eq!(d.handle_key(Key::Char('n')), Command::None);
         assert_eq!(d.mode, Mode::List);
         d.handle_key(Key::Char('t'));
-        assert_eq!(
-            d.handle_key(Key::Char('y')),
-            Command::Terminate("alpha".to_string())
-        );
+        assert_eq!(d.handle_key(Key::Enter), Command::Terminate("alpha".to_string()));
         d.handle_key(Key::Char('d'));
-        assert_eq!(
-            d.handle_key(Key::Enter),
-            Command::Delete("alpha".to_string())
-        );
+        assert_eq!(focus(&d), Focus::Button(1), "delete starts on Cancel");
+        assert_eq!(d.handle_key(Key::Enter), Command::None, "enter on Cancel does nothing");
+        d.handle_key(Key::Char('d'));
+        d.handle_key(Key::Left);
+        assert_eq!(focus(&d), Focus::Button(0));
+        assert_eq!(d.handle_key(Key::Enter), Command::Delete("alpha".to_string()));
+        d.handle_key(Key::Char('d'));
+        assert_eq!(d.handle_key(Key::Char('y')), Command::Delete("alpha".to_string()));
         // a stopped session cannot be terminated
         d.handle_key(Key::End);
         assert_eq!(d.handle_key(Key::Char('t')), Command::None);
@@ -1329,29 +1597,25 @@ mod tests {
     }
 
     #[test]
-    fn shutdown_requires_the_word() {
+    fn shutdown_requires_the_word_and_edits_with_arrows() {
         let mut d = dashboard();
         d.handle_key(Key::Char('Q'));
-        assert_eq!(
-            d.mode,
-            Mode::Shutdown {
-                typed: String::new()
-            }
-        );
-        for c in "no".chars() {
-            d.handle_key(Key::Char(c));
-        }
+        assert!(matches!(d.mode, Mode::Shutdown { .. }));
+        type_text(&mut d, "no");
         assert_eq!(d.handle_key(Key::Enter), Command::None);
-        assert_eq!(
-            d.mode,
-            Mode::Shutdown {
-                typed: String::new()
-            }
-        );
-        for c in "yes".chars() {
-            d.handle_key(Key::Char(c));
-        }
+        assert_eq!(field_text(&d), "");
+        type_text(&mut d, "ys");
+        d.handle_key(Key::Left);
+        d.handle_key(Key::Char('e'));
+        assert_eq!(field_text(&d), "yes");
         assert_eq!(d.handle_key(Key::Enter), Command::Shutdown);
+        d.handle_key(Key::Char('Q'));
+        type_text(&mut d, "yes");
+        d.handle_key(Key::Tab);
+        d.handle_key(Key::Tab);
+        assert_eq!(focus(&d), Focus::Button(1));
+        assert_eq!(d.handle_key(Key::Enter), Command::None, "enter on Cancel closes");
+        assert_eq!(d.mode, Mode::List);
         d.handle_key(Key::Char('Q'));
         assert_eq!(d.handle_key(Key::Esc), Command::None);
         assert_eq!(d.mode, Mode::List);
@@ -1366,15 +1630,17 @@ mod tests {
     }
 
     #[test]
-    fn render_lists_sessions_and_records_hit_regions() {
+    fn render_lists_sessions_in_sections_and_records_hit_regions() {
         let mut d = dashboard();
         let frame = d.render();
         let plain = strip_ansi(&frame);
+        assert!(plain.contains("RUNNING"));
+        assert!(plain.contains("SAVED"));
         assert!(plain.contains("alpha"));
         assert!(plain.contains("gamma"));
-        assert!(plain.contains("Sessions (3)"));
-        assert!(plain.contains("Details"));
-        assert!(plain.contains("shut down"));
+        assert!(plain.contains("2 running · 1 saved"));
+        assert!(!plain.contains("Ctrl q"), "no tip line on the dashboard");
+        assert!(plain.contains("Q shut down"), "the footer offers the shutdown");
         // clicking the second row selects it, clicking it again opens it
         let row_y = d
             .hits
@@ -1384,10 +1650,7 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        assert_eq!(
-            d.handle_mouse(Mouse::Press { x: 5, y: row_y }),
-            Command::None
-        );
+        assert_eq!(d.handle_mouse(Mouse::Press { x: 5, y: row_y }), Command::None);
         assert_eq!(d.selected, 1);
         assert_eq!(
             d.handle_mouse(Mouse::Press { x: 5, y: row_y }),
@@ -1396,24 +1659,45 @@ mod tests {
                 full_history: false
             }
         );
-        // the power button opens the shutdown prompt
-        let power = d
+        // the footer hint opens the shutdown prompt
+        let hint = d
             .hits
             .iter()
-            .find(|h| h.hit == Hit::Key(Key::Char('Q')))
+            .find(|h| h.hit == Hit::Action(Action::ShutdownPrompt))
             .unwrap()
             .rect;
         d.handle_mouse(Mouse::Press {
-            x: power.x + 1,
-            y: power.y,
+            x: hint.x + 1,
+            y: hint.y,
         });
         assert!(matches!(d.mode, Mode::Shutdown { .. }));
+        // its buttons are clickable: Cancel closes it
+        d.render();
+        let cancel = d
+            .hits
+            .iter()
+            .find(|h| h.hit == Hit::Action(Action::Cancel))
+            .unwrap()
+            .rect;
+        d.handle_mouse(Mouse::Press {
+            x: cancel.x + 1,
+            y: cancel.y,
+        });
+        assert_eq!(d.mode, Mode::List);
         // and the wheel moves the selection only in list mode
         d.handle_mouse(Mouse::WheelDown);
-        assert_eq!(d.selected, 1);
-        d.handle_key(Key::Esc);
-        d.handle_mouse(Mouse::WheelDown);
         assert_eq!(d.selected, 2);
+        d.handle_key(Key::Char('?'));
+        d.handle_mouse(Mouse::WheelUp);
+        assert_eq!(d.selected, 2);
+    }
+
+    #[test]
+    fn empty_list_shows_only_the_short_message() {
+        let mut d = Dashboard::new(100, 24);
+        let plain = strip_ansi(&d.render());
+        assert!(plain.contains("No sessions yet."));
+        assert!(!plain.contains("Press n"));
     }
 
     #[test]
@@ -1422,7 +1706,7 @@ mod tests {
         d.resize(80, 20);
         let plain = strip_ansi(&d.render());
         assert!(plain.contains("alpha"));
-        assert!(!plain.contains("Details"));
+        assert!(!plain.contains("Started"));
     }
 
     #[test]
@@ -1433,11 +1717,13 @@ mod tests {
         let visible = d.list_rows_visible;
         assert!(visible < 20);
         d.handle_key(Key::End);
-        d.render();
-        assert_eq!(d.scroll, 20 - visible);
         let plain = strip_ansi(&d.render());
         assert!(plain.contains("s19"));
         assert!(!plain.contains("s00"));
+        d.handle_key(Key::Home);
+        let plain = strip_ansi(&d.render());
+        assert!(plain.contains("RUNNING"), "scrolling back shows the section label again");
+        assert!(plain.contains("s00"));
     }
 
     #[test]
@@ -1450,7 +1736,7 @@ mod tests {
         assert_eq!(age_short(Duration::from_secs(3 * 86_400)), "3d");
         assert_eq!(age_long(Duration::from_secs(3660)), "1h 1m");
         let r = row("x", true);
-        assert_eq!(r.summary(), "zsh · ~/work");
+        assert_eq!(r.summary(), "zsh  ~/work");
     }
 
     fn strip_ansi(s: &str) -> String {

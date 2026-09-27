@@ -77,8 +77,10 @@ pub fn restore_terminal(os_input: &dyn ClientOsApi) {
 
 pub fn key_from(key: KeyWithModifier) -> Key {
     let ctrl = key.key_modifiers.contains(&KeyModifier::Ctrl);
+    let shift = key.key_modifiers.contains(&KeyModifier::Shift);
     match key.bare_key {
         BareKey::Char(c) if ctrl => Key::Ctrl(c.to_ascii_lowercase()),
+        BareKey::Tab if shift => Key::BackTab,
         BareKey::Char(c) => Key::Char(c),
         BareKey::Up => Key::Up,
         BareKey::Down => Key::Down,
