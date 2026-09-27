@@ -85,7 +85,7 @@ pub(crate) use zellij_utils::sessions::list_sessions;
 fn save_before_kill(session_name: &str) {
     if let Err(e) = zellij_client::dashboard::sessions::save_session(session_name) {
         eprintln!(
-            "Could not save session {:?} before killing it: {}",
+            "Could not save session {} before stopping it: {}",
             session_name, e
         );
     }

@@ -1,8 +1,7 @@
 // If you'd like to override the default keybindings completely, be sure to change "keybinds" to "keybinds clear-defaults=true"
-// DevTools fork: a session intercepts a single key. Everything else, including Ctrl c,
-// Ctrl d, Ctrl z and the arrow keys, goes straight to the program running in the pane.
-// Ctrl q leaves the session (it keeps running in the background) and shows the dashboard.
-// To use another key, copy this block into ~/.config/zellij/config.kdl and change it.
+// The only key handled inside a session: Ctrl q leaves the session (it keeps running) and
+// returns to the dashboard. Every other key, including Ctrl c, goes to the program in the
+// pane. Change the key here to use another one.
 keybinds clear-defaults=true {
     shared {
         bind "Ctrl q" { Detach; }
@@ -403,39 +402,37 @@ load_plugins {
 
 
 // ---------------------------------------------------------------------------------------
-// DevTools fork defaults. These are the settings that make a session behave like a plain
-// terminal that remembers its screen: no bars, no frames, no zellij-owned mouse, the
-// pane's output scrolling into the host terminal's own scrollback, and the whole scrollback
-// saved so a terminated session comes back with its screen intact.
+// Sessions behave like a plain terminal that remembers its screen: no bars or frames, the
+// mouse stays with the terminal, output scrolls into the terminal's own scrollback, and
+// every session's screen and scrollback are saved.
 // ---------------------------------------------------------------------------------------
 
-// Running `zellij` opens the dashboard; leaving a session (Ctrl q) returns to it.
+// `zellij` opens the dashboard; leaving a session (Ctrl q) returns to it.
 dashboard true
 
-// Draw the session in the host terminal's primary screen: lines that scroll out of the pane
-// go into the host terminal's own scrollback, so its scrollbar and mouse wheel keep working.
+// Draw sessions in the terminal's primary screen, so that lines scrolling out of the pane
+// go into the terminal's own scrollback and its scrollbar and mouse wheel keep working.
 host_scrollback true
 
-// No frame around the single pane, so the pane is exactly the terminal.
+// No frame around the pane: the pane is the whole terminal.
 pane_frames false
 
-// The host terminal keeps its mouse: wheel scrolling and text selection stay native. When a
-// program in the pane asks for mouse reporting (vim, lazygit, htop), the request is passed
-// on to the host terminal for as long as the program wants it.
+// The terminal keeps its mouse (wheel scrolling and text selection stay native). A program
+// that asks for mouse reporting gets it for as long as it runs.
 mouse_mode false
 advanced_mouse_actions false
 mouse_hover_effects false
 mouse_hover_tips false
 mouse_scroll_resize false
 
-// Save every pane's screen and its whole scrollback (0 = the entire buffer), every 30
-// seconds and whenever a session is terminated from the dashboard.
+// Save every pane's screen and whole scrollback (0 = the entire buffer) every 30 seconds
+// and whenever a session is terminated from the dashboard.
 session_serialization true
 serialize_pane_viewport true
 scrollback_lines_to_serialize 0
 serialization_interval 30
 
-// No popups inside sessions.
+// No pop-ups inside sessions.
 show_startup_tips false
 show_release_notes false
 nested_session_handling "never"

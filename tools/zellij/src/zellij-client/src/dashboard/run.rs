@@ -197,6 +197,9 @@ pub fn run_dashboard(
     if let Some((text, is_error)) = setup.notice {
         dashboard.notify(text, is_error);
     }
+    if let Ok(dir) = std::env::current_dir() {
+        dashboard.set_working_dir(sessions::tilde(&dir));
+    }
     let mut old_mouse_event = MouseEvent::new();
     let mut refresh_due = true;
     let mut last_refresh = Instant::now();
@@ -253,41 +256,38 @@ pub fn run_dashboard(
                 Err(error) => dashboard.notify(error, true),
             },
             Command::Terminate(name) => {
-                dashboard.notify(format!("Saving and stopping '{}'…", name), false);
+                dashboard.notify(format!("Terminating {}…", name), false);
                 write_all(&*os_input, &dashboard.render());
                 match sessions::terminate(&name) {
-                    Ok(()) => dashboard
-                        .notify(format!("Terminated '{}'; its screen is saved", name), false),
-                    Err(error) => dashboard.notify(format!("'{}': {}", name, error), true),
+                    Ok(()) => dashboard.notify(format!("{} terminated", name), false),
+                    Err(error) => dashboard.notify(error, true),
                 }
                 refresh_due = true;
             },
             Command::Delete(name) => {
-                dashboard.notify(format!("Deleting '{}'…", name), false);
+                dashboard.notify(format!("Deleting {}…", name), false);
                 write_all(&*os_input, &dashboard.render());
                 match sessions::delete(&name) {
                     Ok(()) => {
                         memory.forget(&name);
-                        dashboard.notify(format!("Deleted '{}'", name), false);
+                        dashboard.notify(format!("{} deleted", name), false);
                     },
                     Err(error) => dashboard.notify(error, true),
                 }
                 refresh_due = true;
             },
             Command::Shutdown => {
-                dashboard.notify("Saving and stopping every session…", false);
+                dashboard.notify("Shutting down…", false);
                 write_all(&*os_input, &dashboard.render());
                 let results = sessions::terminate_all();
                 let failed: Vec<String> = results
                     .iter()
-                    .filter_map(|(name, result)| {
-                        result.as_ref().err().map(|e| format!("{}: {}", name, e))
-                    })
+                    .filter_map(|(_, result)| result.as_ref().err().cloned())
                     .collect();
                 if failed.is_empty() {
                     break DashboardOutcome::Shutdown;
                 }
-                dashboard.notify(format!("Not shut down: {}", failed.join("; ")), true);
+                dashboard.notify(format!("Could not shut down: {}", failed.join("; ")), true);
                 refresh_due = true;
             },
             Command::Quit => break DashboardOutcome::Quit,

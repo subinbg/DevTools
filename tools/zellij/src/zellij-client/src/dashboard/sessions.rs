@@ -264,19 +264,24 @@ pub fn is_saved(name: &str) -> bool {
 }
 
 pub fn check_new_name(name: &str) -> Result<(), String> {
-    validate_session_name(name)?;
+    if name.trim().is_empty() {
+        return Err("Enter a name".to_string());
+    }
+    if validate_session_name(name).is_err() {
+        return Err("That name cannot be used".to_string());
+    }
     if is_running(name) {
-        return Err(format!("'{}' is already running", name));
+        return Err(format!("A session named {} is already running", name));
     }
     if is_saved(name) {
-        return Err(format!("'{}' is a saved session; open it instead", name));
+        return Err(format!("A saved session named {} already exists", name));
     }
     Ok(())
 }
 
 fn connect(name: &str) -> Result<IpcSenderWithContext<ClientToServerMsg>, String> {
     let path = ZELLIJ_SOCK_DIR.join(name);
-    let stream = ipc_connect(&path).map_err(|e| format!("cannot reach '{}': {}", name, e))?;
+    let stream = ipc_connect(&path).map_err(|e| format!("Could not reach {} ({})", name, e))?;
     Ok(IpcSenderWithContext::new(stream))
 }
 
@@ -292,7 +297,7 @@ pub fn save_session(name: &str) -> Result<(), String> {
             client_id: None,
             is_cli_client: true,
         })
-        .map_err(|e| format!("cannot ask '{}' to save: {}", name, e))?;
+        .map_err(|e| format!("Could not save {} ({})", name, e))?;
     let (tx, rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("dashboard_save_wait".to_string())
@@ -309,7 +314,7 @@ pub fn save_session(name: &str) -> Result<(), String> {
                 },
                 Some(_) => continue,
                 None => {
-                    let _ = tx.send(Err("the session closed the connection".to_string()));
+                    let _ = tx.send(Err("the connection was closed".to_string()));
                     break;
                 },
             }
@@ -317,7 +322,8 @@ pub fn save_session(name: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let result = rx
         .recv_timeout(Duration::from_secs(15))
-        .unwrap_or_else(|_| Err(format!("'{}' did not confirm the save in time", name)));
+        .unwrap_or_else(|_| Err("saving took too long".to_string()))
+        .map_err(|e| format!("Could not save {} ({})", name, e));
     let _ = sender.send_client_msg(ClientToServerMsg::ClientExited);
     result
 }
@@ -329,7 +335,7 @@ fn wait_until_gone(name: &str, timeout: Duration) -> Result<(), String> {
             return Ok(());
         }
         if started.elapsed() > timeout {
-            return Err(format!("'{}' is still running", name));
+            return Err(format!("{} is still running", name));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -340,7 +346,7 @@ pub fn kill(name: &str) -> Result<(), String> {
     let mut sender = connect(name)?;
     sender
         .send_client_msg(ClientToServerMsg::KillSession)
-        .map_err(|e| format!("cannot stop '{}': {}", name, e))?;
+        .map_err(|e| format!("Could not stop {} ({})", name, e))?;
     wait_until_gone(name, Duration::from_secs(5))
 }
 
@@ -348,9 +354,9 @@ pub fn kill(name: &str) -> Result<(), String> {
 /// session stays listed and can be opened again with everything it showed.
 pub fn terminate(name: &str) -> Result<(), String> {
     if !is_running(name) {
-        return Err(format!("'{}' is not running", name));
+        return Err(format!("{} is not running", name));
     }
-    save_session(name).map_err(|e| format!("not stopped, its screen could not be saved: {}", e))?;
+    save_session(name).map_err(|e| format!("{}; not terminated", e))?;
     kill(name)
 }
 
@@ -362,7 +368,7 @@ pub fn delete(name: &str) -> Result<(), String> {
     match std::fs::remove_dir_all(session_info_folder_for_session(name)) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("could not delete '{}': {}", name, e)),
+        Err(e) => Err(format!("Could not delete {} ({})", name, e)),
     }
 }
 

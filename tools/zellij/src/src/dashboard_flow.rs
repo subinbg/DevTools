@@ -82,7 +82,7 @@ impl DashboardFlow {
             match dashboard::run_dashboard(self.os_input.clone(), setup, &mut self.memory) {
                 DashboardOutcome::Open { name, full_history } => match self.resolve(&name) {
                     Some(info) => self.run_session(info, full_history),
-                    None => self.notice = Some((format!("'{}' is gone", name), true)),
+                    None => self.notice = Some((format!("{} no longer exists", name), true)),
                 },
                 DashboardOutcome::New { name } => {
                     let info = ClientInfo::New(name, self.layout_info.clone(), None, None);
@@ -144,8 +144,8 @@ impl DashboardFlow {
             let still_running = session_exists(&name).unwrap_or(false);
             self.notice = Some(match &exit.reason {
                 Some(ExitReason::Error(error)) => (error.clone(), true),
-                _ if !still_running => (format!("'{}' has ended", name), false),
-                _ => (format!("Left '{}'; it keeps running", name), false),
+                _ if !still_running => (format!("{} has ended", name), false),
+                _ => (format!("{} keeps running in the background", name), false),
             });
             // a session switch requested from inside the session (CLI `switch-session`)
             match exit.reconnect.and_then(|connect| connect.name) {
@@ -156,7 +156,7 @@ impl DashboardFlow {
                         info = next_info;
                     },
                     None => {
-                        self.notice = Some((format!("'{}' does not exist", next), true));
+                        self.notice = Some((format!("{} does not exist", next), true));
                         break;
                     },
                 },
