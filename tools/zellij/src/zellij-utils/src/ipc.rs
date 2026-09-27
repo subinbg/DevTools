@@ -246,11 +246,30 @@ pub enum ClientToServerMsg {
     },
 }
 
+/// State of the pane that is rendered straight into the host terminal's primary screen
+/// (`host_scrollback` option), reported with every render so the client can mirror the
+/// pane's alternate-screen and mouse-tracking requests to the host terminal and remember
+/// how much of the pane's history the host terminal already holds.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HostScrollState {
+    pub pane_id: u32,
+    /// Absolute index of the pane's first viewport row: the number of rows that have ever
+    /// scrolled out of the top of its viewport. Everything below this index is either in the
+    /// host terminal's scrollback already or lost.
+    pub rows_scrolled: u64,
+    pub viewport_rows: u32,
+    pub alternate_screen: bool,
+    /// 0: off, 1: normal (presses only), 2: button events, 3: any events
+    pub mouse_tracking: u8,
+    pub mouse_sgr: bool,
+}
+
 // Types of messages sent from the server to the client
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ServerToClientMsg {
     Render {
         content: String,
+        host_state: Option<HostScrollState>,
     },
     UnblockInputThread,
     Exit {

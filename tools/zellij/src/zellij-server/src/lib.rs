@@ -90,6 +90,9 @@ pub enum ServerInstruction {
         ClientId,
     ),
     Render(Option<HashMap<ClientId, String>>),
+    /// DevTools fork: host-terminal scrollback state per client, sent right before the
+    /// render it belongs to
+    HostScrollStates(HashMap<ClientId, zellij_utils::ipc::HostScrollState>),
     UnblockInputThread,
     ClientExit(ClientId, Option<NotificationEnd>),
     RemoveClient(ClientId),
@@ -155,6 +158,7 @@ impl From<&ServerInstruction> for ServerContext {
             ServerInstruction::RemoveClient(..) => ServerContext::RemoveClient,
             ServerInstruction::Error(_) => ServerContext::Error,
             ServerInstruction::KillSession => ServerContext::KillSession,
+            ServerInstruction::HostScrollStates(..) => ServerContext::HostScrollStates,
             ServerInstruction::DetachSession(..) => ServerContext::DetachSession,
             ServerInstruction::AttachClient(..) => ServerContext::AttachClient,
             ServerInstruction::AttachWatcherClient(..) => ServerContext::AttachClient,
@@ -987,12 +991,21 @@ pub fn start_server_impl(
             }
         });
 
+    // DevTools fork: host-terminal scrollback state that arrives just before the render it
+    // belongs to, forwarded to the clients with that render
+    let mut pending_host_scroll_states: HashMap<ClientId, zellij_utils::ipc::HostScrollState> =
+        HashMap::new();
     loop {
         let (instruction, mut err_ctx) = server_receiver.recv().unwrap();
         err_ctx.add_call(ContextType::IPCServer((&instruction).into()));
         match instruction {
             ServerInstruction::FirstClientConnected(cli_assets, is_web_client, client_id) => {
                 let host_terminal_env = cli_assets.host_terminal_env.clone();
+                let host_scrollback_seen = if cli_assets.host_scrollback {
+                    Some(cli_assets.host_scrollback_seen)
+                } else {
+                    None
+                };
                 let mut initial_panes = cli_assets.initial_panes.clone();
                 let (config, layout) = cli_assets.load_config_and_layout();
                 let layout_is_welcome_screen = cli_assets.layout
@@ -1009,7 +1022,10 @@ pub fn start_server_impl(
                 //
                 // If these two are true, we should launch the setup wizard, if even one of them is
                 // false, we should never launch it.
-                let should_launch_setup_wizard = successfully_written_config;
+                // DevTools fork: never open the setup wizard popup; the written config is the
+                // fork's default config, which needs no setup
+                let _ = successfully_written_config;
+                let should_launch_setup_wizard = false;
 
                 let runtime_config_options = match &cli_assets.configuration_options {
                     Some(configuration_options) => {
@@ -1181,6 +1197,13 @@ pub fn start_server_impl(
                             host_terminal_env,
                         ))
                         .unwrap();
+                    session_data
+                        .senders
+                        .send_to_screen(ScreenInstruction::SetClientHostScrollbackSeen(
+                            client_id,
+                            host_scrollback_seen,
+                        ))
+                        .unwrap();
                 }
             },
             ServerInstruction::AttachClient(
@@ -1194,6 +1217,11 @@ pub fn start_server_impl(
                 let session_data = rlock.as_mut().unwrap();
                 let config = session_data.session_configuration.saved_config.clone();
                 let host_terminal_env = cli_assets.host_terminal_env.clone();
+                let host_scrollback_seen = if cli_assets.host_scrollback {
+                    Some(cli_assets.host_scrollback_seen)
+                } else {
+                    None
+                };
                 let runtime_config_options = match cli_assets.configuration_options {
                     Some(configuration_options) => config.options.merge(configuration_options),
                     None => config.options.clone(),
@@ -1232,6 +1260,13 @@ pub fn start_server_impl(
                     .send_to_screen(ScreenInstruction::SetClientHostTerminalEnv(
                         client_id,
                         host_terminal_env,
+                    ))
+                    .unwrap();
+                session_data
+                    .senders
+                    .send_to_screen(ScreenInstruction::SetClientHostScrollbackSeen(
+                        client_id,
+                        host_scrollback_seen,
                     ))
                     .unwrap();
                 session_data
@@ -1553,17 +1588,22 @@ pub fn start_server_impl(
                         .unwrap();
                 }
             },
+            ServerInstruction::HostScrollStates(states) => {
+                pending_host_scroll_states = states;
+            },
             ServerInstruction::Render(serialized_output) => {
                 let client_ids = session_state.read().unwrap().client_ids();
                 // If `Some(_)`- unwrap it and forward it to the clients to render.
                 // If `None`- Send an exit instruction. This is the case when a user closes the last Tab/Pane.
                 if let Some(output) = &serialized_output {
                     for (client_id, client_render_instruction) in output.iter() {
+                        let host_state = pending_host_scroll_states.remove(client_id);
                         send_to_client!(
                             *client_id,
                             os_input,
                             ServerToClientMsg::Render {
-                                content: client_render_instruction.clone()
+                                content: client_render_instruction.clone(),
+                                host_state,
                             },
                             session_state,
                             session_data

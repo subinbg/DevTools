@@ -88,6 +88,10 @@ pub struct TiledPanes {
     tombstones_before_increase: Option<(PaneId, Vec<HashMap<PaneId, PaneGeom>>)>,
     tombstones_before_decrease: Option<(PaneId, Vec<HashMap<PaneId, PaneGeom>>)>,
     dimmed_clients: HashSet<ClientId>,
+    /// DevTools fork: clients whose host terminal already received the pane's history.
+    host_scroll_primed: HashSet<ClientId>,
+    /// DevTools fork: the last host-terminal state reported to each client.
+    host_scroll_last_state: HashMap<ClientId, zellij_utils::ipc::HostScrollState>,
 }
 
 impl TiledPanes {
@@ -133,6 +137,8 @@ impl TiledPanes {
             tombstones_before_increase: None,
             tombstones_before_decrease: None,
             dimmed_clients: HashSet::new(),
+            host_scroll_primed: HashSet::new(),
+            host_scroll_last_state: HashMap::new(),
         }
     }
     pub fn set_client_dimmed(&mut self, client_id: ClientId, dimmed: bool) {
@@ -1123,6 +1129,11 @@ impl TiledPanes {
     pub fn panes_contain(&self, pane_id: &PaneId) -> bool {
         self.panes.contains_key(pane_id)
     }
+    /// DevTools fork: the client's host terminal will need the pane history again.
+    pub fn forget_host_scroll_client(&mut self, client_id: ClientId) {
+        self.host_scroll_primed.remove(&client_id);
+        self.host_scroll_last_state.remove(&client_id);
+    }
     pub fn set_force_render(&mut self) {
         for pane in self.panes.values_mut() {
             pane.set_should_render(true);
@@ -1147,8 +1158,13 @@ impl TiledPanes {
         help_text_visible: &HashMap<ClientId, bool>,
         mouse_scroll_resize: bool,
         mouse_hover_tips: bool,
+        client_host_scrollback_seen: &HashMap<ClientId, Option<u64>>,
     ) -> Result<()> {
         let err_context = || "failed to render tiled panes";
+        // DevTools fork: only a lone terminal pane filling the display is drawn straight into
+        // the host terminal's scrollback
+        let host_scroll_candidate = self.panes.len() == 1 && !floating_panes_are_visible;
+        let host_scroll_display_area = *self.display_area.borrow();
 
         let mut connected_clients: HashSet<ClientId> =
             { self.connected_clients.borrow().iter().copied().collect() };
@@ -1257,6 +1273,25 @@ impl TiledPanes {
                     None
                 };
                 let pane_has_guest_modal = pane.has_guest_modal_for_any_client();
+                if let PaneId::Terminal(terminal_pane_id) = kind {
+                    let eligible = host_scroll_candidate
+                        && !pane_has_guest_modal
+                        && pane.get_content_x() == 0
+                        && pane.get_content_y() == 0
+                        && pane.get_content_columns() == host_scroll_display_area.cols
+                        && pane.get_content_rows() == host_scroll_display_area.rows;
+                    crate::panes::host_scroll::apply(
+                        pane,
+                        *terminal_pane_id,
+                        output,
+                        &connected_clients,
+                        client_host_scrollback_seen,
+                        &mut self.host_scroll_primed,
+                        &mut self.host_scroll_last_state,
+                        eligible,
+                        host_scroll_display_area.rows,
+                    );
+                }
                 let mut pane_contents_and_ui = PaneContentsAndUi::new(
                     pane,
                     output,

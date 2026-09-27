@@ -1,4 +1,5 @@
 mod commands;
+mod dashboard_flow;
 #[cfg(test)]
 mod tests;
 

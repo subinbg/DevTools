@@ -426,6 +426,20 @@ pub struct Options {
     #[clap(long, value_parser)]
     #[serde(default)]
     pub dangerously_enable_paste_buffer_read: Option<bool>,
+
+    /// Whether running `zellij` without arguments opens the session dashboard, and whether
+    /// leaving a session returns to it instead of exiting
+    /// default is true
+    #[clap(long, value_parser)]
+    #[serde(default)]
+    pub dashboard: Option<bool>,
+
+    /// Whether a session is drawn in the host terminal's primary screen so that lines scrolling
+    /// out of its pane land in the host terminal's own scrollback (its scrollbar and wheel work)
+    /// default is true
+    #[clap(long, value_parser)]
+    #[serde(default)]
+    pub host_scrollback: Option<bool>,
 }
 
 #[derive(ValueEnum, Deserialize, Serialize, Debug, Clone, Copy, PartialEq)]
@@ -602,6 +616,8 @@ impl Options {
         let dangerously_enable_paste_buffer_read = other
             .dangerously_enable_paste_buffer_read
             .or(self.dangerously_enable_paste_buffer_read);
+        let dashboard = other.dashboard.or(self.dashboard);
+        let host_scrollback = other.host_scrollback.or(self.host_scrollback);
 
         Options {
             simplified_ui,
@@ -663,6 +679,8 @@ impl Options {
             client_async_worker_tasks,
             nested_session_handling,
             dangerously_enable_paste_buffer_read,
+            dashboard,
+            host_scrollback,
         }
     }
 
@@ -773,6 +791,8 @@ impl Options {
         let dangerously_enable_paste_buffer_read = other
             .dangerously_enable_paste_buffer_read
             .or(self.dangerously_enable_paste_buffer_read);
+        let dashboard = other.dashboard.or(self.dashboard);
+        let host_scrollback = other.host_scrollback.or(self.host_scrollback);
 
         Options {
             simplified_ui,
@@ -834,6 +854,8 @@ impl Options {
             client_async_worker_tasks,
             nested_session_handling,
             dangerously_enable_paste_buffer_read,
+            dashboard,
+            host_scrollback,
         }
     }
 

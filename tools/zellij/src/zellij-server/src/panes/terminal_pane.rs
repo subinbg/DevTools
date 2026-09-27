@@ -1088,6 +1088,23 @@ impl Pane for TerminalPane {
     fn is_alternate_mode_active(&self) -> bool {
         self.grid.is_alternate_mode_active()
     }
+    fn host_scroll_snapshot(&mut self) -> Option<crate::panes::host_scroll::HostScrollSnapshot> {
+        Some(crate::panes::host_scroll::HostScrollSnapshot {
+            pending: self.grid.host_scroll_pending,
+            rows_scrolled_total: self.grid.rows_scrolled_total,
+            history_available: self.grid.history_rows_available(),
+            alternate_screen: self.grid.is_alternate_mode_active(),
+            mouse_tracking: self.grid.mouse_tracking_code(),
+            mouse_sgr: self.grid.mouse_sgr(),
+            is_scrolled: self.grid.is_scrolled,
+        })
+    }
+    fn take_host_scroll_pending(&mut self) -> usize {
+        self.grid.take_host_scroll_pending()
+    }
+    fn host_scroll_history(&self, count: usize) -> Vec<String> {
+        self.grid.render_history_rows(count)
+    }
     fn hold(&mut self, exit_status: Option<i32>, is_first_run: bool, run_command: RunCommand) {
         self.invoked_with = Some(Run::Command(run_command.clone()));
         self.is_held = Some((exit_status, is_first_run, run_command));

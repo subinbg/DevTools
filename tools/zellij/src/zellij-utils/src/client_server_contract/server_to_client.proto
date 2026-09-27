@@ -29,6 +29,16 @@ message ServerToClientMsg {
 
 message RenderMsg {
   string content = 1;
+  optional HostScrollState host_state = 2;
+}
+
+message HostScrollState {
+  uint32 pane_id = 1;
+  uint64 rows_scrolled = 2;
+  uint32 viewport_rows = 3;
+  bool alternate_screen = 4;
+  uint32 mouse_tracking = 5;
+  bool mouse_sgr = 6;
 }
 
 message UnblockInputThreadMsg {

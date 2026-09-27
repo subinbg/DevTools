@@ -6,8 +6,41 @@ use std::{path::PathBuf, process, time::Duration};
 use isahc::{config::RedirectPolicy, prelude::*, HttpClient, Request};
 
 use zellij_client::{
-    os_input_output::get_client_os_input, start_client as start_client_impl, ClientInfo,
+    os_input_output::{get_client_os_input, ClientOsApi},
+    start_client as start_client_impl, ClientInfo,
 };
+
+use crate::dashboard_flow::{dashboard_enabled, DashboardFlow};
+
+/// Starts a session client; with the dashboard enabled (DevTools fork) the session is run
+/// from the dashboard flow, which shows the dashboard once the session is left.
+fn launch(
+    os_input: Box<dyn ClientOsApi>,
+    opts: CliArgs,
+    config: Config,
+    config_options: Options,
+    client: ClientInfo,
+    tab_position_to_focus: Option<usize>,
+    pane_id_to_focus: Option<(u32, bool)>,
+    is_a_reconnect: bool,
+    start_detached_and_exit: bool,
+) -> Option<ConnectToSession> {
+    if !start_detached_and_exit && dashboard_enabled(&config_options, &*os_input) {
+        DashboardFlow::new(os_input, opts, config, config_options, None).run(Some(client));
+        return None;
+    }
+    start_client_impl(
+        os_input,
+        opts,
+        config,
+        config_options,
+        client,
+        tab_position_to_focus,
+        pane_id_to_focus,
+        is_a_reconnect,
+        start_detached_and_exit,
+    )
+}
 
 use zellij_utils::sessions::{
     assert_dead_session, assert_session, assert_session_ne, delete_session as delete_session_impl,
@@ -46,6 +79,18 @@ use zellij_utils::{
 
 pub(crate) use zellij_utils::sessions::list_sessions;
 
+/// DevTools fork: killing a session from the CLI saves its screens and scrollback first, so
+/// it comes back with them when it is opened again (the same as terminating it from the
+/// dashboard).
+fn save_before_kill(session_name: &str) {
+    if let Err(e) = zellij_client::dashboard::sessions::save_session(session_name) {
+        eprintln!(
+            "Could not save session {:?} before killing it: {}",
+            session_name, e
+        );
+    }
+}
+
 pub(crate) fn kill_all_sessions(yes: bool) {
     match get_sessions() {
         Ok(sessions) if sessions.is_empty() => {
@@ -65,6 +110,7 @@ pub(crate) fn kill_all_sessions(yes: bool) {
                 }
             }
             for session in &sessions {
+                save_before_kill(&session.0);
                 kill_session_impl(&session.0);
             }
             process::exit(0);
@@ -125,6 +171,7 @@ pub(crate) fn kill_session(target_session: &Option<String>) {
     match target_session {
         Some(target_session) => {
             assert_session(target_session);
+            save_before_kill(target_session);
             kill_session_impl(target_session);
             process::exit(0);
         },
@@ -832,7 +879,7 @@ pub(crate) fn start_client(opts: CliArgs) {
                 let pane_id_to_focus = reconnect_to_session
                     .as_ref()
                     .and_then(|r| r.pane_id.clone());
-                reconnect_to_session = start_client_impl(
+                reconnect_to_session = launch(
                     Box::new(os_input),
                     opts,
                     config,
@@ -847,7 +894,7 @@ pub(crate) fn start_client(opts: CliArgs) {
         } else {
             if let Some(session_name) = opts.session.clone() {
                 start_client_plan(session_name.clone());
-                reconnect_to_session = start_client_impl(
+                reconnect_to_session = launch(
                     Box::new(os_input),
                     opts,
                     config,
@@ -880,7 +927,7 @@ pub(crate) fn start_client(opts: CliArgs) {
                                 config_options.clone(),
                                 true,
                             );
-                            reconnect_to_session = start_client_impl(
+                            reconnect_to_session = launch(
                                 Box::new(os_input),
                                 opts,
                                 config,
@@ -894,7 +941,7 @@ pub(crate) fn start_client(opts: CliArgs) {
                         },
                         _ => {
                             start_client_plan(session_name.clone());
-                            reconnect_to_session = start_client_impl(
+                            reconnect_to_session = launch(
                                 Box::new(os_input),
                                 opts,
                                 config,
@@ -920,9 +967,21 @@ pub(crate) fn start_client(opts: CliArgs) {
                     process::exit(0);
                 }
 
+                if dashboard_enabled(&config_options, &os_input) {
+                    // DevTools fork: a bare `zellij` opens the dashboard
+                    DashboardFlow::new(
+                        Box::new(os_input),
+                        opts,
+                        config,
+                        config_options,
+                        layout_info,
+                    )
+                    .run(None);
+                    break;
+                }
                 let session_name = generate_unique_session_name_or_exit();
                 start_client_plan(session_name.clone());
-                reconnect_to_session = start_client_impl(
+                reconnect_to_session = launch(
                     Box::new(os_input),
                     opts,
                     config,

@@ -812,6 +812,8 @@ message CliAssets {
   optional string cwd = 11;
   map<string, string> host_terminal_env = 12;
   repeated CommandOrPlugin initial_panes = 13;
+  optional uint64 host_scrollback_seen = 14;
+  bool host_scrollback = 15;
 }
 
 message LayoutInfo {
@@ -1226,6 +1228,8 @@ message Options {
   optional string host_notification_protocol = 67;
   optional bool scroll_mode_sync = 68;
   optional ThemeHue explicit_theme_hue = 69;
+  optional bool dashboard = 70;
+  optional bool host_scrollback = 71;
 }
 
 enum OnForceClose {

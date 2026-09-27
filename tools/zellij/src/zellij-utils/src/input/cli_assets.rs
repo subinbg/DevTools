@@ -48,6 +48,12 @@ pub struct CliAssets {
     pub cwd: Option<PathBuf>,
     pub host_terminal_env: BTreeMap<String, String>,
     pub initial_panes: Option<Vec<CommandOrPlugin>>,
+    /// For host-terminal scrollback: how many rows of the session's pane history this
+    /// client's terminal already holds in its own scrollback (see `HostScrollState`).
+    pub host_scrollback_seen: Option<u64>,
+    /// Whether this client draws the session straight into its host terminal and wants the
+    /// pane's scrolled-off rows pushed into the terminal's own scrollback.
+    pub host_scrollback: bool,
 }
 
 impl CliAssets {

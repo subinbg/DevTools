@@ -212,6 +212,9 @@ pub(crate) struct Tab {
     pub senders: ThreadSenders,
     synchronize_is_active: bool,
     should_clear_display_before_rendering: bool,
+    /// DevTools fork: per client, how many rows of the pane's history the client's host
+    /// terminal already holds (None: unknown, print everything).
+    client_host_scrollback_seen: HashMap<ClientId, Option<u64>>,
     mode_info: Rc<RefCell<HashMap<ClientId, ModeInfo>>>,
     default_mode_info: ModeInfo,
     pub style: Style,
@@ -693,6 +696,20 @@ pub trait Pane {
         // False by default (only terminal-panes support alternate mode)
         false
     }
+    /// DevTools fork: this pane's state for the host-terminal scrollback, or None for panes
+    /// that are not drawn straight into the host terminal (plugins).
+    fn host_scroll_snapshot(&mut self) -> Option<crate::panes::host_scroll::HostScrollSnapshot> {
+        None
+    }
+    /// DevTools fork: the rows that scrolled out of the viewport since the last call.
+    fn take_host_scroll_pending(&mut self) -> usize {
+        0
+    }
+    /// DevTools fork: the last `count` rows of this pane's scrollback, rendered for the host
+    /// terminal.
+    fn host_scroll_history(&self, _count: usize) -> Vec<String> {
+        vec![]
+    }
     fn hold(&mut self, _exit_status: Option<i32>, _is_first_run: bool, _run_command: RunCommand) {
         // No-op by default, only terminal panes support holding
     }
@@ -979,6 +996,7 @@ impl Tab {
             os_api,
             senders,
             should_clear_display_before_rendering: false,
+            client_host_scrollback_seen: HashMap::new(),
             style,
             mode_info,
             default_mode_info,
@@ -2279,8 +2297,19 @@ impl Tab {
         }
         Ok(())
     }
+    /// DevTools fork: how many rows of the pane's history the client's host terminal holds.
+    pub fn set_client_host_scrollback_seen(&mut self, client_id: ClientId, seen: Option<u64>) {
+        self.client_host_scrollback_seen.insert(client_id, seen);
+    }
+    pub fn sync_host_scrollback_seen(&mut self, seen: &HashMap<ClientId, Option<u64>>) {
+        for (client_id, value) in seen {
+            self.client_host_scrollback_seen.insert(*client_id, *value);
+        }
+    }
     pub fn remove_client(&mut self, client_id: ClientId) {
         self.focus_pane_id = None;
+        self.client_host_scrollback_seen.remove(&client_id);
+        self.tiled_panes.forget_host_scroll_client(client_id);
         self.mode_info
             .borrow_mut()
             .get_mut(&client_id)
@@ -4877,6 +4906,7 @@ impl Tab {
                 &self.mouse_help_text_visible,
                 self.mouse_scroll_resize,
                 self.mouse_hover_tips,
+                &self.client_host_scrollback_seen,
             )
             .with_context(err_context)?;
         self.render_stack_list_headers(output, client_id_override)

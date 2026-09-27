@@ -16,8 +16,12 @@ Options {
     default_layout: None,
     layout_dir: None,
     theme_dir: None,
-    mouse_mode: None,
-    pane_frames: None,
+    mouse_mode: Some(
+        false,
+    ),
+    pane_frames: Some(
+        false,
+    ),
     pane_frame_style: None,
     mirror_session: None,
     on_force_close: None,
@@ -30,11 +34,19 @@ Options {
     session_name: None,
     attach_to_session: None,
     auto_layout: None,
-    session_serialization: None,
-    serialize_pane_viewport: None,
-    scrollback_lines_to_serialize: None,
+    session_serialization: Some(
+        true,
+    ),
+    serialize_pane_viewport: Some(
+        true,
+    ),
+    scrollback_lines_to_serialize: Some(
+        0,
+    ),
     styled_underlines: None,
-    serialization_interval: None,
+    serialization_interval: Some(
+        30,
+    ),
     disable_session_metadata: None,
     support_kitty_keyboard_protocol: None,
     support_kitty_graphics_protocol: None,
@@ -42,13 +54,25 @@ Options {
     web_sharing: None,
     stacked_resize: None,
     stacked_pane_list: None,
-    show_startup_tips: None,
-    show_release_notes: None,
-    advanced_mouse_actions: None,
-    mouse_scroll_resize: None,
+    show_startup_tips: Some(
+        false,
+    ),
+    show_release_notes: Some(
+        false,
+    ),
+    advanced_mouse_actions: Some(
+        false,
+    ),
+    mouse_scroll_resize: Some(
+        false,
+    ),
     scroll_mode_sync: None,
-    mouse_hover_effects: None,
-    mouse_hover_tips: None,
+    mouse_hover_effects: Some(
+        false,
+    ),
+    mouse_hover_tips: Some(
+        false,
+    ),
     visual_bell: None,
     focus_follows_mouse: None,
     mouse_click_through: None,
@@ -62,6 +86,14 @@ Options {
     enforce_https_for_localhost: None,
     post_command_discovery_hook: None,
     client_async_worker_tasks: None,
-    nested_session_handling: None,
+    nested_session_handling: Some(
+        Never,
+    ),
     dangerously_enable_paste_buffer_read: None,
+    dashboard: Some(
+        true,
+    ),
+    host_scrollback: Some(
+        true,
+    ),
 }

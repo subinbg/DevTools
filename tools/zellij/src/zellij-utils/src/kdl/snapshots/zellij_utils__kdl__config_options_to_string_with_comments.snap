@@ -355,6 +355,17 @@ web_sharing "disabled"
 // Default: false
 // dangerously_enable_paste_buffer_read false
  
+// Whether running `zellij` without arguments opens the session dashboard,
+// and whether leaving a session returns to it instead of exiting
+// Default: true
+// dashboard false
+ 
+// Whether a session is drawn in the host terminal's primary screen so that lines
+// scrolling out of its pane land in the host terminal's own scrollback
+// (the terminal's scrollbar and mouse wheel then work as usual)
+// Default: true
+// host_scrollback false
+ 
 // How to handle a nested Zellij session detected inside a pane.
 // Options:
 //   - "ask" (Default — prompt with a modal)

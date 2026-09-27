@@ -370,9 +370,13 @@ impl TryFrom<ProtoClientToServerMsg> for ClientToServerMsg {
 impl From<ServerToClientMsg> for ProtoServerToClientMsg {
     fn from(msg: ServerToClientMsg) -> Self {
         let message = match msg {
-            ServerToClientMsg::Render { content } => {
-                server_to_client_msg::Message::Render(RenderMsg { content })
-            },
+            ServerToClientMsg::Render {
+                content,
+                host_state,
+            } => server_to_client_msg::Message::Render(RenderMsg {
+                content,
+                host_state: host_state.map(|s| s.into()),
+            }),
             ServerToClientMsg::UnblockInputThread => {
                 server_to_client_msg::Message::UnblockInputThread(UnblockInputThreadMsg {})
             },
@@ -595,6 +599,7 @@ impl TryFrom<ProtoServerToClientMsg> for ServerToClientMsg {
         match msg.message {
             Some(server_to_client_msg::Message::Render(render)) => Ok(ServerToClientMsg::Render {
                 content: render.content,
+                host_state: render.host_state.map(|s| s.into()),
             }),
             Some(server_to_client_msg::Message::UnblockInputThread(_)) => {
                 Ok(ServerToClientMsg::UnblockInputThread)
@@ -849,6 +854,8 @@ impl From<crate::input::cli_assets::CliAssets>
                 .initial_panes
                 .map(|panes| panes.into_iter().map(|p| p.into()).collect())
                 .unwrap_or_default(),
+            host_scrollback_seen: cli_assets.host_scrollback_seen,
+            host_scrollback: cli_assets.host_scrollback,
         }
     }
 }
@@ -890,7 +897,39 @@ impl TryFrom<crate::client_server_contract::client_server_contract::CliAssets>
                         .collect::<Result<Vec<_>>>()?,
                 )
             },
+            host_scrollback_seen: cli_assets.host_scrollback_seen,
+            host_scrollback: cli_assets.host_scrollback,
         })
+    }
+}
+
+impl From<crate::ipc::HostScrollState>
+    for crate::client_server_contract::client_server_contract::HostScrollState
+{
+    fn from(state: crate::ipc::HostScrollState) -> Self {
+        Self {
+            pane_id: state.pane_id,
+            rows_scrolled: state.rows_scrolled,
+            viewport_rows: state.viewport_rows,
+            alternate_screen: state.alternate_screen,
+            mouse_tracking: state.mouse_tracking as u32,
+            mouse_sgr: state.mouse_sgr,
+        }
+    }
+}
+
+impl From<crate::client_server_contract::client_server_contract::HostScrollState>
+    for crate::ipc::HostScrollState
+{
+    fn from(state: crate::client_server_contract::client_server_contract::HostScrollState) -> Self {
+        Self {
+            pane_id: state.pane_id,
+            rows_scrolled: state.rows_scrolled,
+            viewport_rows: state.viewport_rows,
+            alternate_screen: state.alternate_screen,
+            mouse_tracking: state.mouse_tracking.min(3) as u8,
+            mouse_sgr: state.mouse_sgr,
+        }
     }
 }
 
@@ -956,6 +995,8 @@ impl From<crate::input::options::Options>
             stacked_resize: options.stacked_resize,
             stacked_pane_list: options.stacked_pane_list,
             dangerously_enable_paste_buffer_read: options.dangerously_enable_paste_buffer_read,
+            dashboard: options.dashboard,
+            host_scrollback: options.host_scrollback,
             show_startup_tips: options.show_startup_tips,
             show_release_notes: options.show_release_notes,
             advanced_mouse_actions: options.advanced_mouse_actions,
@@ -1094,6 +1135,8 @@ impl TryFrom<crate::client_server_contract::client_server_contract::Options>
             stacked_resize: options.stacked_resize,
             stacked_pane_list: options.stacked_pane_list,
             dangerously_enable_paste_buffer_read: options.dangerously_enable_paste_buffer_read,
+            dashboard: options.dashboard,
+            host_scrollback: options.host_scrollback,
             show_startup_tips: options.show_startup_tips,
             show_release_notes: options.show_release_notes,
             advanced_mouse_actions: options.advanced_mouse_actions,

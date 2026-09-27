@@ -2990,6 +2990,11 @@ impl Options {
             "dangerously_enable_paste_buffer_read"
         )
         .map(|(v, _)| v);
+        let dashboard =
+            kdl_property_first_arg_as_bool_or_error!(kdl_options, "dashboard").map(|(v, _)| v);
+        let host_scrollback =
+            kdl_property_first_arg_as_bool_or_error!(kdl_options, "host_scrollback")
+                .map(|(v, _)| v);
 
         Ok(Options {
             simplified_ui,
@@ -3051,6 +3056,8 @@ impl Options {
             client_async_worker_tasks,
             nested_session_handling,
             dangerously_enable_paste_buffer_read,
+            dashboard,
+            host_scrollback,
         })
     }
     pub fn from_string(stringified_keybindings: &String) -> Result<Self, ConfigError> {
@@ -4726,6 +4733,61 @@ impl Options {
             None
         }
     }
+    fn dashboard_to_kdl(&self, add_comments: bool) -> Option<KdlNode> {
+        let comment_text = format!(
+            "{}\n{}\n{}\n{}",
+            " ",
+            "// Whether running `zellij` without arguments opens the session dashboard,",
+            "// and whether leaving a session returns to it instead of exiting",
+            "// Default: true",
+        );
+        let create_node = |node_value: bool| -> KdlNode {
+            let mut node = KdlNode::new("dashboard");
+            node.push(KdlValue::Bool(node_value));
+            node
+        };
+        if let Some(value) = self.dashboard {
+            let mut node = create_node(value);
+            if add_comments {
+                node.set_leading(format!("{}\n", comment_text));
+            }
+            Some(node)
+        } else if add_comments {
+            let mut node = create_node(false);
+            node.set_leading(format!("{}\n// ", comment_text));
+            Some(node)
+        } else {
+            None
+        }
+    }
+    fn host_scrollback_to_kdl(&self, add_comments: bool) -> Option<KdlNode> {
+        let comment_text = format!(
+            "{}\n{}\n{}\n{}\n{}",
+            " ",
+            "// Whether a session is drawn in the host terminal's primary screen so that lines",
+            "// scrolling out of its pane land in the host terminal's own scrollback",
+            "// (the terminal's scrollbar and mouse wheel then work as usual)",
+            "// Default: true",
+        );
+        let create_node = |node_value: bool| -> KdlNode {
+            let mut node = KdlNode::new("host_scrollback");
+            node.push(KdlValue::Bool(node_value));
+            node
+        };
+        if let Some(value) = self.host_scrollback {
+            let mut node = create_node(value);
+            if add_comments {
+                node.set_leading(format!("{}\n", comment_text));
+            }
+            Some(node)
+        } else if add_comments {
+            let mut node = create_node(false);
+            node.set_leading(format!("{}\n// ", comment_text));
+            Some(node)
+        } else {
+            None
+        }
+    }
     fn dangerously_enable_paste_buffer_read_to_kdl(&self, add_comments: bool) -> Option<KdlNode> {
         let comment_text = format!(
             "{}\n{}\n{}\n{}\n{}\n{}",
@@ -4966,6 +5028,12 @@ impl Options {
             self.dangerously_enable_paste_buffer_read_to_kdl(add_comments)
         {
             nodes.push(dangerously_enable_paste_buffer_read);
+        }
+        if let Some(dashboard) = self.dashboard_to_kdl(add_comments) {
+            nodes.push(dashboard);
+        }
+        if let Some(host_scrollback) = self.host_scrollback_to_kdl(add_comments) {
+            nodes.push(host_scrollback);
         }
         if let Some(nested_session_handling) = self.nested_session_handling_to_kdl(add_comments) {
             nodes.push(nested_session_handling);

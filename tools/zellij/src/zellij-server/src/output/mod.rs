@@ -133,6 +133,43 @@ fn write_changed_styles(
     Ok(())
 }
 
+/// DevTools fork: renders scrollback rows for the host terminal, one string per row, each
+/// padded (or truncated) to `width` cells with its styles written out.
+pub fn serialize_rows_for_host(
+    rows: &[Row],
+    width: usize,
+    styled_underlines: bool,
+    osc8_hyperlinks: bool,
+) -> Vec<String> {
+    let buffer = OutputBuffer {
+        changed_lines: HashSet::new(),
+        should_update_all_lines: false,
+        styled_underlines,
+    };
+    rows.iter()
+        .map(|row| {
+            let mut vte_output = String::new();
+            let mut character_styles = DEFAULT_STYLES.enable_styled_underlines(styled_underlines);
+            for t_character in buffer.extract_characters_from_row(row, width) {
+                if write_changed_styles(
+                    &mut character_styles,
+                    *t_character.styles,
+                    None,
+                    None,
+                    osc8_hyperlinks,
+                    &mut vte_output,
+                )
+                .is_err()
+                {
+                    break;
+                }
+                vte_output.push(t_character.character);
+            }
+            vte_output
+        })
+        .collect()
+}
+
 fn serialize_chunks_with_newlines(
     character_chunks: Vec<CharacterChunk>,
     _sixel_chunks: Option<&Vec<SixelImageChunk>>, // TODO: fix this sometime
@@ -628,6 +665,9 @@ fn serialize_kitty_frame(kitty_input: KittyFrameInput) -> Result<String> {
 
 #[derive(Clone, Debug, Default)]
 pub struct Output {
+    /// DevTools fork: the host-terminal scrollback state reported to each client with the
+    /// render (see `panes::host_scroll`).
+    host_scroll_states: HashMap<ClientId, zellij_utils::ipc::HostScrollState>,
     pre_vte_instructions: HashMap<ClientId, Vec<String>>,
     post_vte_instructions: HashMap<ClientId, Vec<String>>,
     client_character_chunks: HashMap<ClientId, Vec<CharacterChunk>>,
@@ -745,6 +785,18 @@ impl Output {
                 .or_insert_with(Vec::new);
             entry.push(String::from(vte_instruction));
         }
+    }
+    pub fn set_host_scroll_state(
+        &mut self,
+        client_id: ClientId,
+        state: zellij_utils::ipc::HostScrollState,
+    ) {
+        self.host_scroll_states.insert(client_id, state);
+    }
+    pub fn take_host_scroll_states(
+        &mut self,
+    ) -> HashMap<ClientId, zellij_utils::ipc::HostScrollState> {
+        std::mem::take(&mut self.host_scroll_states)
     }
     pub fn mark_host_display_cleared_for_clients(
         &mut self,
@@ -1053,7 +1105,8 @@ impl Output {
         Ok(serialized_render_instructions)
     }
     pub fn is_dirty(&self) -> bool {
-        !self.pre_vte_instructions.is_empty()
+        !self.host_scroll_states.is_empty()
+            || !self.pre_vte_instructions.is_empty()
             || !self.post_vte_instructions.is_empty()
             || self.client_character_chunks.values().any(|c| !c.is_empty())
             || self.sixel_chunks.values().any(|c| !c.is_empty())

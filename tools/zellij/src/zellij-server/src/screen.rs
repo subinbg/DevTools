@@ -641,6 +641,9 @@ pub enum ScreenInstruction {
     SetTabBellFlash(usize, bool), // tab_id, is_flashing
     HostTerminalFocusChanged(ClientId, bool),
     SetClientHostTerminalEnv(ClientId, BTreeMap<String, String>),
+    /// DevTools fork: the client takes part in host-terminal scrollback (Some), with the
+    /// number of pane history rows its terminal already holds (None inside: unknown)
+    SetClientHostScrollbackSeen(ClientId, Option<Option<u64>>),
     ForwardDesktopNotifications {
         pane_id: u32,
         notifications: Vec<PendingNotification>,
@@ -1157,6 +1160,9 @@ impl From<&ScreenInstruction> for ScreenContext {
             ScreenInstruction::HostTerminalFocusChanged(..) => {
                 ScreenContext::HostTerminalFocusChanged
             },
+            ScreenInstruction::SetClientHostScrollbackSeen(..) => {
+                ScreenContext::SetClientHostScrollbackSeen
+            },
             ScreenInstruction::SetClientHostTerminalEnv(..) => {
                 ScreenContext::SetClientHostTerminalEnv
             },
@@ -1631,6 +1637,8 @@ pub(crate) struct Screen {
     client_notification_protocols: HashMap<ClientId, NotificationProtocol>,
     host_notification_protocol: HostNotificationProtocol,
     client_host_terminal_env: HashMap<ClientId, BTreeMap<String, String>>,
+    /// DevTools fork: rows of pane history each client's host terminal already holds
+    client_host_scrollback_seen: HashMap<ClientId, Option<u64>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1838,6 +1846,7 @@ impl Screen {
             client_notification_protocols: HashMap::new(),
             host_notification_protocol: HostNotificationProtocol::default(),
             client_host_terminal_env: HashMap::new(),
+            client_host_scrollback_seen: HashMap::new(),
         }
     }
 
@@ -4200,6 +4209,7 @@ impl Screen {
 
             for (tab_index, tab) in &mut self.tabs {
                 if tab.has_selectable_tiled_panes() {
+                    tab.sync_host_scrollback_seen(&self.client_host_scrollback_seen);
                     // Pass None for normal client rendering
                     tab.render(&mut output, None).context(err_context)?;
                 } else if !tab.is_pending() {
@@ -4284,8 +4294,17 @@ impl Screen {
             }
 
             if non_watcher_output_was_dirty || has_bell {
+                let host_scroll_states = output.take_host_scroll_states();
                 let serialized_output = output.serialize().context(err_context)?;
                 if !serialized_output.is_empty() {
+                    if !host_scroll_states.is_empty() {
+                        // must precede the render it belongs to (same channel, so it does)
+                        let _ = self
+                            .bus
+                            .senders
+                            .send_to_server(ServerInstruction::HostScrollStates(host_scroll_states))
+                            .context(err_context);
+                    }
                     let _ = self
                         .bus
                         .senders
@@ -4521,6 +4540,25 @@ impl Screen {
             .unwrap_or(true)
     }
 
+    /// DevTools fork: remembers and tells every tab how many rows of pane history the
+    /// client's host terminal already holds.
+    pub fn set_client_host_scrollback_seen(
+        &mut self,
+        client_id: ClientId,
+        participation: Option<Option<u64>>,
+    ) {
+        match participation {
+            Some(seen) => {
+                self.client_host_scrollback_seen.insert(client_id, seen);
+                for tab in self.tabs.values_mut() {
+                    tab.set_client_host_scrollback_seen(client_id, seen);
+                }
+            },
+            None => {
+                self.client_host_scrollback_seen.remove(&client_id);
+            },
+        }
+    }
     pub fn set_client_host_terminal_env(
         &mut self,
         client_id: ClientId,
@@ -5191,6 +5229,7 @@ impl Screen {
         self.client_host_focused.remove(&client_id);
         self.client_notification_protocols.remove(&client_id);
         self.client_host_terminal_env.remove(&client_id);
+        self.client_host_scrollback_seen.remove(&client_id);
         self.revert_fit_disabled_without_reference_client()
             .with_context(err_context)?;
         if let Some(prev_tab_id) = previously_active_tab_id {
@@ -10362,6 +10401,9 @@ pub(crate) fn screen_thread_main(
             },
             ScreenInstruction::SetClientHostTerminalEnv(client_id, host_terminal_env) => {
                 screen.set_client_host_terminal_env(client_id, host_terminal_env);
+            },
+            ScreenInstruction::SetClientHostScrollbackSeen(client_id, seen) => {
+                screen.set_client_host_scrollback_seen(client_id, seen);
             },
             ScreenInstruction::ForwardDesktopNotifications {
                 pane_id,

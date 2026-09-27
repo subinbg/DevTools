@@ -1383,6 +1383,10 @@ pub struct CliAssets {
     pub host_terminal_env: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     #[prost(message, repeated, tag="13")]
     pub initial_panes: ::prost::alloc::vec::Vec<CommandOrPlugin>,
+    #[prost(uint64, optional, tag="14")]
+    pub host_scrollback_seen: ::core::option::Option<u64>,
+    #[prost(bool, tag="15")]
+    pub host_scrollback: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -2068,6 +2072,10 @@ pub struct Options {
     pub scroll_mode_sync: ::core::option::Option<bool>,
     #[prost(enumeration="ThemeHue", optional, tag="69")]
     pub explicit_theme_hue: ::core::option::Option<i32>,
+    #[prost(bool, optional, tag="70")]
+    pub dashboard: ::core::option::Option<bool>,
+    #[prost(bool, optional, tag="71")]
+    pub host_scrollback: ::core::option::Option<bool>,
 }
 /// Pane-targeting action messages
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3400,6 +3408,24 @@ pub mod server_to_client_msg {
 pub struct RenderMsg {
     #[prost(string, tag="1")]
     pub content: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="2")]
+    pub host_state: ::core::option::Option<HostScrollState>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HostScrollState {
+    #[prost(uint32, tag="1")]
+    pub pane_id: u32,
+    #[prost(uint64, tag="2")]
+    pub rows_scrolled: u64,
+    #[prost(uint32, tag="3")]
+    pub viewport_rows: u32,
+    #[prost(bool, tag="4")]
+    pub alternate_screen: bool,
+    #[prost(uint32, tag="5")]
+    pub mouse_tracking: u32,
+    #[prost(bool, tag="6")]
+    pub mouse_sgr: bool,
 }
 /// Empty message
 #[allow(clippy::derive_partial_eq_without_eq)]

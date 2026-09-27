@@ -425,6 +425,8 @@ fn test_client_messages() {
                 .into_iter()
                 .collect(),
             initial_panes: None,
+            host_scrollback_seen: Some(1234),
+            host_scrollback: true,
         },
         is_web_client: true,
     });
@@ -445,6 +447,8 @@ fn test_client_messages() {
                 .into_iter()
                 .collect(),
             initial_panes: None,
+            host_scrollback_seen: Some(1234),
+            host_scrollback: true,
         },
         is_web_client: true,
     });
@@ -513,6 +517,8 @@ fn test_client_messages() {
                 host_notification_protocol: Some(HostNotificationProtocol::Osc99),
                 nested_session_handling: Some(NestedSessionHandling::Fullscreen),
                 dangerously_enable_paste_buffer_read: Some(true),
+                dashboard: Some(false),
+                host_scrollback: Some(true),
             }),
             layout: None,
             terminal_window_size: Size { rows: 80, cols: 42 },
@@ -534,6 +540,8 @@ fn test_client_messages() {
                 }),
                 CommandOrPlugin::Plugin(RunPluginOrAlias::RunPlugin(RunPlugin::default())),
             ]),
+            host_scrollback_seen: None,
+            host_scrollback: false,
         },
         is_web_client: true,
     });
@@ -3791,12 +3799,22 @@ fn test_client_messages() {
 fn test_server_messages() {
     test_server_roundtrip!(ServerToClientMsg::Render {
         content: "Hello, World!".to_string(),
+        host_state: None,
     });
     test_server_roundtrip!(ServerToClientMsg::Render {
         content: "".to_string(),
+        host_state: None,
     });
     test_server_roundtrip!(ServerToClientMsg::Render {
         content: "x".repeat(10000),
+        host_state: Some(crate::ipc::HostScrollState {
+            pane_id: 3,
+            rows_scrolled: 987_654_321,
+            viewport_rows: 42,
+            alternate_screen: true,
+            mouse_tracking: 3,
+            mouse_sgr: true,
+        }),
     });
     test_server_roundtrip!(ServerToClientMsg::UnblockInputThread);
     test_server_roundtrip!(ServerToClientMsg::Connected);

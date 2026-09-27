@@ -840,6 +840,15 @@ pub struct Grid {
     scrollback_buffer_lines: usize,
     pub mouse_mode: MouseMode,
     pub mouse_tracking: MouseTracking,
+    /// DevTools fork, host-terminal scrollback: rows scrolled out of the top of the viewport
+    /// by output since they were last taken for rendering.
+    pub host_scroll_pending: usize,
+    /// Absolute index of the viewport's first row: every row that ever scrolled out of the
+    /// top of the viewport (adjusted when a resize moves rows between the viewport and the
+    /// scrollback).
+    pub rows_scrolled_total: u64,
+    /// The primary screen's scrollback row count, kept while the alternate screen is active.
+    primary_scrollback_lines_while_alt: usize,
     pub focus_event_tracking: bool,
     /// Has the app in this pane subscribed to host color-palette theme
     /// notifications via `CSI ? 2031 h`? When true, host-emitted DSR 997
@@ -1225,6 +1234,9 @@ impl Grid {
             scrollback_buffer_lines: 0,
             mouse_mode: MouseMode::default(),
             mouse_tracking: MouseTracking::default(),
+            host_scroll_pending: 0,
+            rows_scrolled_total: 0,
+            primary_scrollback_lines_while_alt: 0,
             focus_event_tracking: false,
             color_palette_notification_enabled: false,
             character_cell_size,
@@ -1815,6 +1827,8 @@ impl Grid {
                         new_columns,
                     );
                     let rows_pulled = self.viewport.len() - current_viewport_row_count;
+                    self.rows_scrolled_total =
+                        self.rows_scrolled_total.saturating_sub(rows_pulled as u64);
                     new_cursor_y += rows_pulled;
                     if let Some(saved_cursor_y_coordinates) = saved_cursor_y_coordinates.as_mut() {
                         *saved_cursor_y_coordinates += rows_pulled;
@@ -1842,6 +1856,7 @@ impl Grid {
                         row_count_to_transfer,
                         new_columns,
                     );
+                    self.rows_scrolled_total += row_count_to_transfer as u64;
                 },
                 Ordering::Equal => {},
             }
@@ -2325,6 +2340,8 @@ impl Grid {
         if scroll_region_bottom == self.height.saturating_sub(1) && scroll_region_top == 0 {
             if self.alternate_screen_state.is_none() {
                 self.transfer_rows_to_lines_above(1);
+                self.host_scroll_pending += 1;
+                self.rows_scrolled_total += 1;
                 if offset_hyperlinks {
                     self.hyperlink_tracker.offset_cursor_lines(1);
                 }
@@ -4250,6 +4267,59 @@ impl Grid {
             },
         }
     }
+    // ---- DevTools fork: host-terminal scrollback ----
+
+    pub fn take_host_scroll_pending(&mut self) -> usize {
+        std::mem::take(&mut self.host_scroll_pending)
+    }
+    /// Rows of the primary screen's scrollback that `render_history_rows` can return.
+    pub fn history_rows_available(&self) -> usize {
+        if self.alternate_screen_state.is_some() {
+            self.primary_scrollback_lines_while_alt
+        } else {
+            self.scrollback_buffer_lines
+        }
+    }
+    pub fn mouse_tracking_code(&self) -> u8 {
+        match self.mouse_tracking {
+            MouseTracking::Off => 0,
+            MouseTracking::Normal => 1,
+            MouseTracking::ButtonEventTracking => 2,
+            MouseTracking::AnyEventTracking => 3,
+        }
+    }
+    pub fn mouse_sgr(&self) -> bool {
+        matches!(self.mouse_mode, MouseMode::Sgr)
+    }
+    /// The last `count` display rows of the primary screen's scrollback, oldest first, each
+    /// rendered as styled text padded to the viewport width.
+    pub fn render_history_rows(&self, count: usize) -> Vec<String> {
+        let lines_above = match self.alternate_screen_state.as_ref() {
+            Some(alternate_screen_state) => &alternate_screen_state.lines_above,
+            None => &self.lines_above,
+        };
+        if count == 0 || lines_above.is_empty() {
+            return vec![];
+        }
+        let mut rows: Vec<Row> = Vec::with_capacity(count);
+        'lines: for line in lines_above.iter().rev() {
+            let mut parts = line.clone().split_to_rows_of_length(self.width.max(1));
+            parts.reverse();
+            for part in parts {
+                rows.push(part);
+                if rows.len() >= count {
+                    break 'lines;
+                }
+            }
+        }
+        rows.reverse();
+        crate::output::serialize_rows_for_host(
+            &rows,
+            self.width,
+            self.styled_underlines,
+            self.osc8_hyperlinks,
+        )
+    }
     pub fn is_alternate_mode_active(&self) -> bool {
         self.alternate_screen_state.is_some()
     }
@@ -5129,6 +5199,7 @@ impl Perform for Grid {
                         },
                         1049 => {
                             // enter alternate buffer
+                            self.primary_scrollback_lines_while_alt = self.scrollback_buffer_lines;
                             let current_lines_above =
                                 std::mem::replace(&mut self.lines_above, VecDeque::new());
                             let current_viewport = std::mem::replace(

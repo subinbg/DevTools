@@ -9,6 +9,8 @@ mod os_input_output_windows;
 
 pub mod cli_client;
 mod command_is_executing;
+pub mod dashboard;
+mod host_terminal;
 mod input_handler;
 mod keyboard_parser;
 mod nested_reannounce;
@@ -167,7 +169,7 @@ use zellij_utils::{
         config::Config,
         options::Options,
     },
-    ipc::{ClientToServerMsg, ExitReason, IpcReceiveError, ServerToClientMsg},
+    ipc::{ClientToServerMsg, ExitReason, HostScrollState, IpcReceiveError, ServerToClientMsg},
     nested_session,
     pane_size::Size,
     vendored::termwiz::input::InputEvent,
@@ -177,7 +179,7 @@ use zellij_utils::{
 #[derive(Debug, Clone)]
 pub(crate) enum ClientInstruction {
     Error(String),
-    Render(String),
+    Render(String, Option<HostScrollState>),
     UnblockInputThread,
     Exit(ExitReason),
     Connected,
@@ -206,7 +208,10 @@ impl From<ServerToClientMsg> for ClientInstruction {
     fn from(instruction: ServerToClientMsg) -> Self {
         match instruction {
             ServerToClientMsg::Exit { exit_reason } => ClientInstruction::Exit(exit_reason),
-            ServerToClientMsg::Render { content } => ClientInstruction::Render(content),
+            ServerToClientMsg::Render {
+                content,
+                host_state,
+            } => ClientInstruction::Render(content, host_state),
             ServerToClientMsg::UnblockInputThread => ClientInstruction::UnblockInputThread,
             ServerToClientMsg::Connected => ClientInstruction::Connected,
             ServerToClientMsg::Log { lines } => ClientInstruction::Log(lines),
@@ -248,7 +253,7 @@ impl From<&ClientInstruction> for ClientContext {
         match *client_instruction {
             ClientInstruction::Exit(_) => ClientContext::Exit,
             ClientInstruction::Error(_) => ClientContext::Error,
-            ClientInstruction::Render(_) => ClientContext::Render,
+            ClientInstruction::Render(..) => ClientContext::Render,
             ClientInstruction::UnblockInputThread => ClientContext::UnblockInputThread,
             ClientInstruction::Connected => ClientContext::Connected,
             ClientInstruction::Log(_) => ClientContext::Log,
@@ -500,6 +505,27 @@ pub fn spawn_server(socket_path: &Path, debug: bool) -> io::Result<()> {
     cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
     cmd.spawn()?;
     Ok(())
+}
+
+/// How the client treats the host terminal (DevTools fork).
+#[derive(Debug, Clone, Copy)]
+pub struct TerminalHandling {
+    /// Draw the session in the terminal's primary screen instead of the alternate screen,
+    /// so that pane output scrolling out of view goes into the terminal's own scrollback.
+    pub primary_screen: bool,
+    /// Print the goodbye message and restore the terminal when the client exits. False when
+    /// the dashboard takes the terminal over next.
+    pub teardown_on_exit: bool,
+}
+
+/// Why and how the client stopped.
+#[derive(Debug, Default)]
+pub struct ClientExit {
+    /// A session switch requested from inside the session.
+    pub reconnect: Option<ConnectToSession>,
+    pub reason: Option<ExitReason>,
+    /// The last state of the pane drawn into the host terminal, if any.
+    pub host_scroll: Option<HostScrollState>,
 }
 
 #[derive(Debug, Clone)]
@@ -936,7 +962,7 @@ pub fn start_remote_client(
 }
 
 pub fn start_client(
-    mut os_input: Box<dyn ClientOsApi>,
+    os_input: Box<dyn ClientOsApi>,
     cli_args: CliArgs,
     config: Config,          // saved to disk (or default?)
     config_options: Options, // CLI options merged into (getting priority over) saved config options
@@ -946,9 +972,44 @@ pub fn start_client(
     is_a_reconnect: bool,
     start_detached_and_exit: bool,
 ) -> Option<ConnectToSession> {
+    let terminal = TerminalHandling {
+        primary_screen: config_options.host_scrollback.unwrap_or(true),
+        teardown_on_exit: true,
+    };
+    start_client_ext(
+        os_input,
+        cli_args,
+        config,
+        config_options,
+        info,
+        tab_position_to_focus,
+        pane_id_to_focus,
+        is_a_reconnect,
+        start_detached_and_exit,
+        terminal,
+        None,
+    )
+    .reconnect
+}
+
+/// `start_client` with control over the host terminal and, for host-terminal scrollback,
+/// the number of pane history rows this terminal already holds.
+pub fn start_client_ext(
+    mut os_input: Box<dyn ClientOsApi>,
+    cli_args: CliArgs,
+    config: Config,          // saved to disk (or default?)
+    config_options: Options, // CLI options merged into (getting priority over) saved config options
+    info: ClientInfo,
+    tab_position_to_focus: Option<usize>,
+    pane_id_to_focus: Option<(u32, bool)>, // (pane_id, is_plugin)
+    is_a_reconnect: bool,
+    start_detached_and_exit: bool,
+    terminal: TerminalHandling,
+    host_scrollback_seen: Option<u64>,
+) -> ClientExit {
     if start_detached_and_exit {
         start_server_detached(os_input, cli_args, config, config_options, info);
-        return None;
+        return ClientExit::default();
     }
     info!("Starting Zellij client!");
 
@@ -962,6 +1023,7 @@ pub fn start_client(
         .support_kitty_graphics_protocol
         .unwrap_or(true);
     let should_start_web_server = config_options.web_server.map(|w| w).unwrap_or(false);
+    let zellij_owns_mouse = config_options.mouse_mode.unwrap_or(true);
     let mut reconnect_to_session = None;
     os_input.unset_raw_mode().unwrap();
 
@@ -970,7 +1032,9 @@ pub fn start_client(
         // attributes we want from it, and some terminals don't treat these atomically (looking at
         // you Windows Terminal...)
         let mut stdout = os_input.get_stdout_writer();
-        stdout.write_all(ENTER_ALTERNATE_SCREEN.as_bytes()).unwrap();
+        if !terminal.primary_screen {
+            stdout.write_all(ENTER_ALTERNATE_SCREEN.as_bytes()).unwrap();
+        }
         stdout
             .write_all(CLEAR_CLIENT_TERMINAL_ATTRIBUTES.as_bytes())
             .unwrap();
@@ -1044,6 +1108,8 @@ pub fn start_client(
                 force_run_layout_commands: false,
                 cwd: None,
                 host_terminal_env: host_terminal_env(),
+                host_scrollback_seen,
+                host_scrollback: terminal.primary_screen,
                 initial_panes: None,
             };
             (
@@ -1091,6 +1157,8 @@ pub fn start_client(
                 force_run_layout_commands: force_run_commands,
                 cwd,
                 host_terminal_env: host_terminal_env(),
+                host_scrollback_seen,
+                host_scrollback: terminal.primary_screen,
                 initial_panes: None,
             };
 
@@ -1149,6 +1217,8 @@ pub fn start_client(
                 force_run_layout_commands: false,
                 cwd: layout_cwd,
                 host_terminal_env: host_terminal_env(),
+                host_scrollback_seen: None,
+                host_scrollback: terminal.primary_screen,
                 initial_panes,
             };
 
@@ -1390,6 +1460,10 @@ pub fn start_client(
     };
 
     let mut exit_msg = String::new();
+    let mut exit_reason: Option<ExitReason> = None;
+    let mut last_host_state: Option<HostScrollState> = None;
+    let mut host_mirror =
+        crate::host_terminal::HostTerminalMirror::new(terminal.primary_screen, !zellij_owns_mouse);
     let mut synchronised_output = match os_input.env_variable("TERM").as_deref() {
         Some("alacritty") => Some(SyncOutput::DCS),
         _ => None,
@@ -1409,14 +1483,19 @@ pub fn start_client(
                 if let ExitReason::Error(_) = reason {
                     handle_error(reason.to_string());
                 }
+                exit_reason = Some(reason.clone());
                 exit_msg = reason.to_string();
                 break;
             },
             ClientInstruction::Error(backtrace) => {
                 handle_error(backtrace);
             },
-            ClientInstruction::Render(output) => {
+            ClientInstruction::Render(output, host_state) => {
                 let mut stdout = os_input.get_stdout_writer();
+                if let Some(state) = host_state {
+                    host_mirror.apply(&state, &mut *stdout);
+                    last_host_state = Some(state);
+                }
                 if let Some(sync) = synchronised_output {
                     stdout
                         .write_all(sync.start_seq())
@@ -1609,7 +1688,12 @@ pub fn start_client(
         let _ = stdout.flush();
     }
 
-    if reconnect_to_session.is_none() {
+    {
+        // undo any alternate-screen or mouse state mirrored for the pane
+        let mut stdout = os_input.get_stdout_writer();
+        host_mirror.restore(&mut *stdout);
+    }
+    if reconnect_to_session.is_none() && terminal.teardown_on_exit {
         let goodbye_message = terminal_teardown_message(
             &exit_msg,
             full_screen_ws.rows,
@@ -1623,16 +1707,24 @@ pub fn start_client(
         let mut stdout = os_input.get_stdout_writer();
         stdout.write_all(goodbye_message.as_bytes()).unwrap();
         stdout.flush().unwrap();
-    } else {
+    } else if reconnect_to_session.is_some() {
         let clear_screen = "\u{1b}[2J";
         let mut stdout = os_input.get_stdout_writer();
         stdout.write_all(clear_screen.as_bytes()).unwrap();
         stdout.flush().unwrap();
+    } else {
+        // the dashboard takes the terminal over next: keep the screen, release the mouse
+        os_input.disable_mouse().non_fatal();
+        info!("{}", exit_msg);
     }
 
     let _ = send_input_instructions.send(InputInstruction::Exit);
 
-    reconnect_to_session
+    ClientExit {
+        reconnect: reconnect_to_session,
+        reason: exit_reason,
+        host_scroll: last_host_state,
+    }
 }
 
 pub fn start_server_detached(
@@ -1668,6 +1760,8 @@ pub fn start_server_detached(
                 force_run_layout_commands: force_run_commands,
                 cwd,
                 host_terminal_env: host_terminal_env(),
+                host_scrollback_seen: None,
+                host_scrollback: false,
                 initial_panes: None,
             };
 
@@ -1727,6 +1821,8 @@ pub fn start_server_detached(
                 force_run_layout_commands: false,
                 cwd: layout_cwd,
                 host_terminal_env: host_terminal_env(),
+                host_scrollback_seen: None,
+                host_scrollback: false,
                 initial_panes,
             };
 

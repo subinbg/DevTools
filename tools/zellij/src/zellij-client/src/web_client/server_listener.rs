@@ -190,7 +190,7 @@ pub fn zellij_server_listener(
                                 os_input.send_to_server(ClientToServerMsg::ClientExited);
                                 break;
                             },
-                            Some(ServerToClientMsg::Render{content: bytes}) => {
+                            Some(ServerToClientMsg::Render{content: bytes, ..}) => {
                                 if !sent_init_messages {
                                     client_connection_bus
                                         .send_stdout(terminal_init_messages().concat());
