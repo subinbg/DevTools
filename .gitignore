@@ -1,2 +1,5 @@
 # build outputs
 tools/*/dist/
+
+# local only
+.local

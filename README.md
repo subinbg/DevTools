@@ -1,63 +1,49 @@
 # DevTools
 
-Monorepo of development tools I build myself for Linux x64. Each tool's upstream source is
-vendored with `git subtree --squash`, so it can be edited in place and later merged with a
-newer upstream release. GitHub Actions builds every tool and publishes binaries.
+Terminal tools I built and patched for myself.
+Each tool is under `tools/<tool>/src` as a squashed git subtree and is edited in place.
 
-## Layout
+| Tool | Codebase |
+|------|----------|
+| lazygit | https://github.com/jesseduffield/lazygit |
+| zellij | https://github.com/zellij-org/zellij |
+
+A release is a `release-<tool>-<ref>[-suffix]` tag.
+Pushing one builds `<tool>-linux-x64` and `<tool>-darwin-arm64`, checks and runs each on its own platform, and attaches them with a `SHA256SUMS` file to a GitHub Release.
+
+## Example
+
+For example, assume that I want my own build of `bat` (https://github.com/sharkdp/bat).
+Everything about a tool will be placed inside `tools/<tool>/`.
+The name `<tool>` should not contain a dash.
+
+Files to write first:
 
 ```
-tools/<tool>/tool.env   upstream repo + pinned ref
-tools/<tool>/build.sh   builds tools/<tool>/dist/<tool> for Linux x64
-tools/<tool>/src/       upstream source (git subtree); edit freely
-scripts/tool.sh         add / update / diff / status / release
-scripts/package.sh      turns dist/<tool> into <tool>-linux-x64{,.tar.gz,.sha256}
-.github/workflows/      one workflow per tool
+tools/bat/tool.env        UPSTREAM_REPO=https://github.com/sharkdp/bat.git
+                          UPSTREAM_REF=v0.25.0
+tools/bat/Dockerfile      stages: base (the toolchain), test, build (ARG TARGET, ARG COMMIT), export
+tools/bat/.dockerignore   dist and src/target
 ```
 
-| Tool | Upstream | Build |
-|------|----------|-------|
-| lazygit | https://github.com/jesseduffield/lazygit | Go, `CGO_ENABLED=0`, static |
-| zellij | https://github.com/zellij-org/zellij | Rust, `x86_64-unknown-linux-musl`, static |
-
-## Daily workflow
+Then:
 
 ```sh
-scripts/tool.sh status                  # pinned ref vs latest upstream tag
-scripts/tool.sh diff lazygit            # my local changes vs pristine upstream
-scripts/tool.sh update lazygit v0.66.0  # merge a newer upstream release, then commit the new pin
-scripts/tool.sh release lazygit         # tag lazygit-v0.65.1 and push -> GitHub Release
-scripts/tool.sh release lazygit 2       # tag lazygit-v0.65.1-2 (a second build of the same upstream)
+git add tools/bat && git commit -m "Add the bat tool"   # add needs a clean tree
+./devtools add bat                 # import upstream v0.25.0 into tools/bat/src, two commits
+./devtools test bat                # the test stage
+./devtools build bat darwin-arm64  # -> tools/bat/dist/bat-darwin-arm64 (linux-x64 is the default)
+./devtools shell bat               # a shell in the toolchain image
 ```
 
-Edit anything under `tools/<tool>/src/` and commit as usual. On push to `main`, the affected
-tool's workflow runs the unit tests, builds it and uploads a `<tool>-linux-x64` artifact.
-Pushing a `<tool>-*` tag (what `release` does) additionally attaches the binary, a tarball and
-a checksum to a GitHub Release:
+Patch `tools/bat/src/` and commit as in any repository. Later:
 
 ```sh
-curl -fL https://github.com/subinbg/DevTools/releases/download/lazygit-v0.65.1/lazygit-linux-x64 -o ~/.local/bin/lazygit
-chmod +x ~/.local/bin/lazygit
+./devtools diff bat                # my changes against pristine upstream
+./devtools status                  # pinned refs vs the latest upstream tags
+./devtools update bat v0.26.0      # merge the newer upstream and pin it
+./devtools release bat             # tag release-bat-v0.26.0 and push it; CI publishes the Release
+./devtools clean bat               # drop dist/, src/target, the shell image and the build caches
 ```
 
-## Updating a tool
-
-`scripts/tool.sh update <tool> <ref>` runs `git subtree pull --squash`. Upstream changes are
-merged with local modifications; conflicts are ordinary git merge conflicts under
-`tools/<tool>/src/`. After resolving and committing, run `scripts/tool.sh pin <tool> <ref>`.
-
-## Adding a tool
-
-1. Create `tools/<name>/tool.env` with `UPSTREAM_REPO` and `UPSTREAM_REF`.
-2. Create `tools/<name>/build.sh` that writes `tools/<name>/dist/<name>`.
-3. Commit, then `scripts/tool.sh add <name>`.
-4. Copy one of the workflows in `.github/workflows/` and adjust the toolchain steps.
-
-## Building locally
-
-```sh
-tools/lazygit/build.sh                            # Linux x64 (needs Go)
-GOOS=darwin GOARCH=arm64 tools/lazygit/build.sh   # native macOS build for trying it out
-tools/zellij/build.sh                             # Linux x64 (needs Rust and musl-tools)
-RUSTUP_TOOLCHAIN=stable TARGET=aarch64-apple-darwin tools/zellij/build.sh   # native macOS build
-```
+If `update` stops on conflicts, resolve them under `tools/bat/src`, commit, and run `./devtools pin bat v0.26.0`.

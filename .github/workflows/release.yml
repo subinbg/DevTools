@@ -1,0 +1,140 @@
+name: release
+
+on:
+  push:
+    tags: ['release-*']
+  workflow_dispatch:
+    inputs:
+      tool:
+        description: tool to build (a directory under tools/; artifacts only, no Release)
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  meta:
+    name: Which tool
+    runs-on: ubuntu-latest
+    outputs:
+      tool: ${{ steps.meta.outputs.tool }}
+      ref: ${{ steps.meta.outputs.ref }}
+      commit: ${{ steps.meta.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: meta
+        env:
+          INPUT_TOOL: ${{ inputs.tool }}
+        run: |
+          if [[ -n "$INPUT_TOOL" ]]; then
+            tool="$INPUT_TOOL"; ref=""
+          else
+            rest="${GITHUB_REF_NAME#release-}"
+            tool="${rest%%-*}"; ref="${rest#*-}"
+          fi
+          [[ -f "tools/$tool/tool.env" ]] || { echo "unknown tool '$tool'" >&2; exit 1; }
+          echo "tool=$tool" >>"$GITHUB_OUTPUT"
+          echo "ref=$ref" >>"$GITHUB_OUTPUT"
+          echo "commit=${GITHUB_SHA::7}" >>"$GITHUB_OUTPUT"
+
+  build:
+    name: Test and build
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TOOL: ${{ needs.meta.outputs.tool }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Test
+        uses: docker/build-push-action@v7
+        with:
+          context: tools/${{ env.TOOL }}
+          provenance: false
+          target: test
+          no-cache-filters: test
+          cache-from: type=gha,scope=${{ env.TOOL }}
+          cache-to: type=gha,scope=${{ env.TOOL }},mode=max
+      - name: Build linux-x64
+        uses: docker/build-push-action@v7
+        with:
+          context: tools/${{ env.TOOL }}
+          provenance: false
+          target: export
+          build-args: |
+            TARGET=linux-x64
+            COMMIT=${{ needs.meta.outputs.commit }}
+          outputs: type=local,dest=dist
+          cache-from: type=gha,scope=${{ env.TOOL }}
+      - name: Build darwin-arm64
+        uses: docker/build-push-action@v7
+        with:
+          context: tools/${{ env.TOOL }}
+          provenance: false
+          target: export
+          build-args: |
+            TARGET=darwin-arm64
+            COMMIT=${{ needs.meta.outputs.commit }}
+          outputs: type=local,dest=dist
+          cache-from: type=gha,scope=${{ env.TOOL }}
+      - name: Check the Linux binary is static and runs
+        run: |
+          bin="dist/$TOOL-linux-x64"
+          chmod +x "$bin"
+          desc="$(file -b "$bin")"
+          echo "$desc"
+          case "$desc" in
+            *"statically linked"*|*"static-pie linked"*) ;;
+            *) echo "not statically linked" >&2; exit 1 ;;
+          esac
+          "$bin" --version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.TOOL }}
+          path: dist/*
+          if-no-files-found: error
+
+  verify-darwin:
+    name: Check the macOS binary
+    needs: [meta, build]
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      TOOL: ${{ needs.meta.outputs.tool }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.TOOL }}
+          path: dist
+      - name: Check the cross-compiled binary links only system libraries and runs
+        run: |
+          bin="dist/$TOOL-darwin-arm64"
+          chmod +x "$bin"
+          otool -L "$bin"
+          libs="$(otool -L "$bin" | tail -n +2 | awk '{print $1}')"
+          bad="$(grep -v -e '^/usr/lib/' -e '^/System/Library/' <<<"$libs" || true)"
+          [[ -z "$bad" ]] || { echo "non-system libraries linked: $bad" >&2; exit 1; }
+          "$bin" --version
+
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [meta, build, verify-darwin]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.meta.outputs.tool }}
+          path: dist
+      - name: Checksums
+        run: cd dist && chmod +x * && sha256sum * >SHA256SUMS && cat SHA256SUMS
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ needs.meta.outputs.tool }} ${{ needs.meta.outputs.ref }}
+          files: dist/*
