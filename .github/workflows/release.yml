@@ -42,9 +42,27 @@ jobs:
           echo "ref=$ref" >>"$GITHUB_OUTPUT"
           echo "commit=${GITHUB_SHA::7}" >>"$GITHUB_OUTPUT"
 
+  image:
+    name: Toolchain image
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TOOL: ${{ needs.meta.outputs.tool }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: tools/${{ env.TOOL }}
+          provenance: false
+          target: base
+          cache-from: type=gha,scope=${{ env.TOOL }}
+          cache-to: type=gha,scope=${{ env.TOOL }},mode=min
+
   test:
     name: Test
-    needs: meta
+    needs: [meta, image]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -58,12 +76,11 @@ jobs:
           provenance: false
           target: test
           no-cache-filters: test
-          cache-from: type=gha,scope=${{ env.TOOL }}-test
-          cache-to: type=gha,scope=${{ env.TOOL }}-test,mode=max
+          cache-from: type=gha,scope=${{ env.TOOL }}
 
   build-linux-x64:
     name: Build linux-x64
-    needs: meta
+    needs: [meta, image]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -80,8 +97,7 @@ jobs:
             TARGET=linux-x64
             COMMIT=${{ needs.meta.outputs.commit }}
           outputs: type=local,dest=dist
-          cache-from: type=gha,scope=${{ env.TOOL }}-linux-x64
-          cache-to: type=gha,scope=${{ env.TOOL }}-linux-x64,mode=max
+          cache-from: type=gha,scope=${{ env.TOOL }}
       - name: Check the binary is static and runs
         run: |
           bin="dist/$TOOL-linux-x64"
@@ -101,7 +117,7 @@ jobs:
 
   build-darwin-arm64:
     name: Build darwin-arm64
-    needs: meta
+    needs: [meta, image]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -118,8 +134,7 @@ jobs:
             TARGET=darwin-arm64
             COMMIT=${{ needs.meta.outputs.commit }}
           outputs: type=local,dest=dist
-          cache-from: type=gha,scope=${{ env.TOOL }}-darwin-arm64
-          cache-to: type=gha,scope=${{ env.TOOL }}-darwin-arm64,mode=max
+          cache-from: type=gha,scope=${{ env.TOOL }}
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.TOOL }}-darwin-arm64

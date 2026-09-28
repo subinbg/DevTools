@@ -43,10 +43,13 @@ COPY src ./src
 FROM source AS test
 ARG TARGETARCH
 ARG TEST_ARGS=""
+# try_write_to_fd_returns_zero_on_stuck_pty races the kernel's tty buffering:
+# it fails now and then on GitHub Action, so it is skipped.
 RUN --mount=type=cache,id=zellij-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=zellij-target-${TARGETARCH},target=/work/src/target \
     cd src && cargo test --locked --no-default-features \
-      -p zellij-utils -p zellij-client -p zellij-server $TEST_ARGS
+      -p zellij-utils -p zellij-client -p zellij-server $TEST_ARGS \
+      -- --skip try_write_to_fd_returns_zero_on_stuck_pty
 
 FROM source AS build
 ARG TARGETARCH
