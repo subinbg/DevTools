@@ -3,7 +3,7 @@
 //! dashboard when the session is left with Ctrl q.
 
 use zellij_client::{
-    dashboard::{self, DashboardOutcome, DashboardSetup, TerminalMemory},
+    dashboard::{self, DashboardOutcome, DashboardSetup},
     os_input_output::ClientOsApi,
     start_client_ext, ClientInfo, TerminalHandling,
 };
@@ -32,7 +32,9 @@ pub(crate) struct DashboardFlow {
     config: Config,
     config_options: Options,
     layout_info: Option<LayoutInfo>,
-    memory: TerminalMemory,
+    /// The session drawn last in this terminal and how many of its history rows the terminal
+    /// holds. Entering any other context starts from a cleared terminal.
+    last_shown: Option<(String, u64)>,
     notice: Option<(String, bool)>,
     sessions_run: usize,
     primary_screen: bool,
@@ -53,7 +55,7 @@ impl DashboardFlow {
             config,
             config_options,
             layout_info,
-            memory: TerminalMemory::load(),
+            last_shown: None,
             notice: None,
             sessions_run: 0,
             primary_screen,
@@ -63,12 +65,8 @@ impl DashboardFlow {
     /// Runs until the user quits the dashboard. `first` is a session to open before the
     /// dashboard is shown for the first time (`zellij attach x`, `zellij -s x`).
     pub(crate) fn run(mut self, first: Option<ClientInfo>) {
-        if self.primary_screen {
-            // sessions are drawn over the primary screen: keep what the shell showed
-            dashboard::push_screen_into_history(&*self.os_input);
-        }
         if let Some(info) = first {
-            self.run_session(info, false);
+            self.run_session(info);
         }
         loop {
             let setup = DashboardSetup {
@@ -79,19 +77,40 @@ impl DashboardFlow {
                     .unwrap_or(false),
                 notice: self.notice.take(),
             };
-            match dashboard::run_dashboard(self.os_input.clone(), setup, &mut self.memory) {
-                DashboardOutcome::Open { name, full_history } => match self.resolve(&name) {
-                    Some(info) => self.run_session(info, full_history),
+            match dashboard::run_dashboard(self.os_input.clone(), setup) {
+                DashboardOutcome::Open { name } => match self.resolve(&name) {
+                    Some(info) => self.run_session(info),
                     None => self.notice = Some((format!("{} no longer exists", name), true)),
                 },
                 DashboardOutcome::New { name } => {
                     let info = ClientInfo::New(name, self.layout_info.clone(), None, None);
-                    self.run_session(info, false);
+                    self.run_session(info);
                 },
                 DashboardOutcome::Quit | DashboardOutcome::Shutdown => break,
             }
         }
+        if self.primary_screen && self.sessions_run > 0 {
+            // the sessions drew into this terminal; hand it back clean
+            dashboard::clear_terminal(&*self.os_input);
+        }
         dashboard::restore_terminal(&*self.os_input);
+    }
+
+    /// Makes the terminal show only the session about to be drawn. Re-entering the session
+    /// shown last continues its scrollback (the server prints only the rows the terminal
+    /// has not seen); any other session gets a cleared screen and scrollback and its whole
+    /// history. Returns the number of history rows the terminal already holds.
+    fn prepare_terminal_for(&mut self, name: &str) -> Option<u64> {
+        if !self.primary_screen {
+            return None;
+        }
+        match &self.last_shown {
+            Some((shown, rows)) if shown == name => Some(*rows),
+            _ => {
+                dashboard::clear_terminal(&*self.os_input);
+                Some(0)
+            },
+        }
     }
 
     fn resolve(&self, name: &str) -> Option<ClientInfo> {
@@ -112,15 +131,11 @@ impl DashboardFlow {
         }
     }
 
-    fn run_session(&mut self, info: ClientInfo, full_history: bool) {
+    fn run_session(&mut self, info: ClientInfo) {
         let mut info = info;
         let mut name = info.get_session_name().to_string();
-        let mut rows_seen = if full_history {
-            Some(0)
-        } else {
-            self.memory.rows_seen(&name)
-        };
         loop {
+            let rows_seen = self.prepare_terminal_for(&name);
             let exit = start_client_ext(
                 self.os_input.clone(),
                 self.opts.clone(),
@@ -138,9 +153,10 @@ impl DashboardFlow {
                 rows_seen,
             );
             self.sessions_run += 1;
-            if let Some(state) = exit.host_scroll {
-                self.memory.remember(&name, state.rows_scrolled);
-            }
+            self.last_shown = exit
+                .host_scroll
+                .as_ref()
+                .map(|state| (name.clone(), state.rows_scrolled));
             let still_running = session_exists(&name).unwrap_or(false);
             self.notice = Some(match &exit.reason {
                 Some(ExitReason::Error(error)) => (error.clone(), true),
@@ -151,7 +167,6 @@ impl DashboardFlow {
             match exit.reconnect.and_then(|connect| connect.name) {
                 Some(next) => match self.resolve(&next) {
                     Some(next_info) => {
-                        rows_seen = self.memory.rows_seen(&next);
                         name = next;
                         info = next_info;
                     },

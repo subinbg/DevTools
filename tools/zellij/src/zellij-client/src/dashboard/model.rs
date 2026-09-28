@@ -113,11 +113,9 @@ pub enum Mouse {
 pub enum Command {
     None,
     Refresh,
-    /// Attach to (or resurrect) the session; `full_history` reprints the pane's whole
-    /// history into the host terminal even if it was printed before.
+    /// Attach to (or resurrect) the session.
     Open {
         name: String,
-        full_history: bool,
     },
     New {
         name: String,
@@ -618,7 +616,6 @@ impl Dashboard {
             Key::Home | Key::Char('g') => self.move_selection(isize::MIN / 2),
             Key::End | Key::Char('G') => self.move_selection(isize::MAX / 2),
             Key::Enter | Key::Char('o') | Key::Char(' ') => return self.act(Action::Open),
-            Key::Char('O') => return self.open_selected(true),
             Key::Char('n') | Key::Char('c') => return self.act(Action::New),
             Key::Char('t') | Key::Char('x') => return self.act(Action::Terminate),
             Key::Char('d') | Key::Delete => return self.act(Action::Delete),
@@ -636,7 +633,7 @@ impl Dashboard {
     /// Runs an action from a key or a click.
     fn act(&mut self, action: Action) -> Command {
         match action {
-            Action::Open => self.open_selected(false),
+            Action::Open => self.open_selected(),
             Action::New => {
                 self.mode = Mode::NewSession {
                     field: TextField::new(&self.suggested_name, 48),
@@ -725,11 +722,10 @@ impl Dashboard {
         }
     }
 
-    fn open_selected(&mut self, full_history: bool) -> Command {
+    fn open_selected(&mut self) -> Command {
         match self.selected_row() {
             Some(row) => Command::Open {
                 name: row.name.clone(),
-                full_history,
             },
             None => self.act(Action::New),
         }
@@ -761,7 +757,7 @@ impl Dashboard {
                             return Command::None;
                         }
                         if idx == self.selected {
-                            self.open_selected(false)
+                            self.open_selected()
                         } else {
                             self.selected = idx;
                             self.clamp_selection();
@@ -1419,7 +1415,6 @@ impl Dashboard {
         let entries: Vec<(&str, &str)> = vec![
             ("↑ ↓  j k", "move"),
             ("⏎  o  space", "open the selected session"),
-            ("O", "open it and reprint its whole scrollback"),
             ("n", "new session"),
             ("t  x", "terminate (the screen is saved)"),
             ("d", "delete (the saved screen is removed)"),
@@ -1663,14 +1658,6 @@ mod tests {
             d.handle_key(Key::Enter),
             Command::Open {
                 name: "beta".to_string(),
-                full_history: false
-            }
-        );
-        assert_eq!(
-            d.handle_key(Key::Char('O')),
-            Command::Open {
-                name: "beta".to_string(),
-                full_history: true
             }
         );
     }
@@ -1891,7 +1878,6 @@ mod tests {
             d.handle_mouse(Mouse::Press { x: 5, y: row_y }),
             Command::Open {
                 name: "beta".to_string(),
-                full_history: false
             }
         );
         // the footer hint opens the shutdown prompt

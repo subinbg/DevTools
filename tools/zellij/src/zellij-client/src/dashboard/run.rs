@@ -17,7 +17,6 @@ use zellij_utils::{
     vendored::termwiz::input::InputEvent,
 };
 
-use super::memory::TerminalMemory;
 use super::model::{Command, Dashboard, Key, Mouse};
 use super::sessions;
 use crate::{
@@ -29,7 +28,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DashboardOutcome {
     /// Attach to a running session, or resurrect a saved one.
-    Open { name: String, full_history: bool },
+    Open { name: String },
     /// Create a new session with this (validated, unused) name.
     New { name: String },
     /// Close the dashboard; sessions keep running.
@@ -55,13 +54,10 @@ fn write_all(os_input: &dyn ClientOsApi, text: &str) {
     let _ = stdout.flush();
 }
 
-/// Scrolls whatever the terminal shows into its scrollback, leaving the screen blank, by
-/// feeding it as many line feeds as it has rows. Used once at startup so the shell's screen
-/// is not lost when a session is drawn over it.
-pub fn push_screen_into_history(os_input: &dyn ClientOsApi) {
-    let rows = os_input.get_terminal_size().rows;
-    let feeds: String = std::iter::repeat('\n').take(rows).collect();
-    write_all(os_input, &format!("{}\u{1b}[H", feeds));
+/// Clears the terminal's screen and its scrollback (xterm's "erase saved lines"), so that
+/// what is drawn next is all the terminal shows and all it can scroll back to.
+pub fn clear_terminal(os_input: &dyn ClientOsApi) {
+    write_all(os_input, "\u{1b}[2J\u{1b}[3J\u{1b}[H");
 }
 
 /// Restores the terminal when the process is about to exit: cooked mode, no mouse, no
@@ -163,7 +159,6 @@ impl ResizeWatcher {
 pub fn run_dashboard(
     mut os_input: Box<dyn ClientOsApi>,
     setup: DashboardSetup,
-    memory: &mut TerminalMemory,
 ) -> DashboardOutcome {
     // A session that was just left may still have a thread blocked on stdin; changing the
     // session name makes it hand its next read over to us (see ClientOsApi::read_from_stdin).
@@ -248,9 +243,7 @@ pub fn run_dashboard(
         match command {
             Command::None => {},
             Command::Refresh => refresh_due = true,
-            Command::Open { name, full_history } => {
-                break DashboardOutcome::Open { name, full_history };
-            },
+            Command::Open { name } => break DashboardOutcome::Open { name },
             Command::New { name } => match sessions::check_new_name(&name) {
                 Ok(()) => break DashboardOutcome::New { name },
                 Err(error) => dashboard.notify(error, true),
@@ -268,10 +261,7 @@ pub fn run_dashboard(
                 dashboard.notify(format!("Deleting {}…", name), false);
                 write_all(&*os_input, &dashboard.render());
                 match sessions::delete(&name) {
-                    Ok(()) => {
-                        memory.forget(&name);
-                        dashboard.notify(format!("{} deleted", name), false);
-                    },
+                    Ok(()) => dashboard.notify(format!("{} deleted", name), false),
                     Err(error) => dashboard.notify(error, true),
                 }
                 refresh_due = true;

@@ -91,6 +91,8 @@ pub fn create_first_message(
         config_opts.web_server = Some(true);
         config_opts.web_sharing = Some(WebSharing::On);
         let cli_assets = CliAssets {
+            host_scrollback_seen: None,
+            host_scrollback: false,
             config_file_path,
             config_dir: None,
             should_ignore_config: false,
@@ -112,6 +114,8 @@ pub fn create_first_message(
         }
     } else {
         let cli_assets = CliAssets {
+            host_scrollback_seen: None,
+            host_scrollback: false,
             config_file_path,
             config_dir: None,
             should_ignore_config: false,

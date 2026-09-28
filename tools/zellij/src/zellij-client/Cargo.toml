@@ -37,12 +37,14 @@ zellij-utils = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 isahc = { workspace = true }
-tokio-tungstenite = "0.28"
-rustls = { version = "0.23", default-features = false, features = ["std"] }
-tokio-rustls = "0.26"
-rustls-pemfile = "2"
-rustls-native-certs = "0.8"
-rustls-pki-types = "1"
+# DevTools fork: the websocket and TLS crates serve remote attach and the web client only,
+# so they are pulled in with web_server_capability instead of always.
+tokio-tungstenite = { version = "0.28", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["std"], optional = true }
+tokio-rustls = { version = "0.26", optional = true }
+rustls-pemfile = { version = "2", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
+rustls-pki-types = { version = "1", optional = true }
 futures-util = "0.3"
 urlencoding = "2.1"
 
@@ -80,5 +82,11 @@ web_server_capability = [
     "dep:time",
     "dep:axum-server",
     "dep:tower-http",
+    "dep:tokio-tungstenite",
+    "dep:rustls",
+    "dep:tokio-rustls",
+    "dep:rustls-pemfile",
+    "dep:rustls-native-certs",
+    "dep:rustls-pki-types",
     "zellij-utils/web_server_capability",
 ]

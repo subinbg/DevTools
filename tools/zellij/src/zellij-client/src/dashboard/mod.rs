@@ -5,12 +5,8 @@
 //! behind a typed confirmation.
 
 pub mod canvas;
-pub mod memory;
 pub mod model;
 pub mod run;
 pub mod sessions;
 
-pub use memory::TerminalMemory;
-pub use run::{
-    push_screen_into_history, restore_terminal, run_dashboard, DashboardOutcome, DashboardSetup,
-};
+pub use run::{clear_terminal, restore_terminal, run_dashboard, DashboardOutcome, DashboardSetup};
