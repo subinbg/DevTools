@@ -174,8 +174,21 @@ jobs:
           pattern: ${{ needs.meta.outputs.tool }}-*
           merge-multiple: true
           path: dist
-      - name: Checksums
-        run: cd dist && chmod +x * && sha256sum * >SHA256SUMS && cat SHA256SUMS
+      - name: Pack each binary as <tool>-<ref>-<target>.tar.gz, holding just <tool>
+        env:
+          TOOL: ${{ needs.meta.outputs.tool }}
+          REF: ${{ needs.meta.outputs.ref }}
+        run: |
+          cd dist
+          for bin in "$TOOL"-*; do
+            target="${bin#"$TOOL"-}"
+            chmod +x "$bin"
+            mkdir stage && mv "$bin" "stage/$TOOL"
+            tar -C stage -czf "$TOOL-$REF-$target.tar.gz" "$TOOL"
+            rm -r stage
+          done
+          sha256sum *.tar.gz >SHA256SUMS
+          cat SHA256SUMS
       - uses: softprops/action-gh-release@v3
         with:
           name: ${{ needs.meta.outputs.tool }} ${{ needs.meta.outputs.ref }}

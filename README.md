@@ -9,7 +9,7 @@ Each tool is under `tools/<tool>/src` as a squashed git subtree and is edited in
 | zellij | https://github.com/zellij-org/zellij |
 
 A release is a `release-<tool>-<ref>[-suffix]` tag.
-Pushing one builds `<tool>-linux-x64` and `<tool>-darwin-arm64`, checks and runs each on its own platform, and attaches them with a `SHA256SUMS` file to a GitHub Release.
+Pushing one builds a static Linux x64 binary and a macOS arm64 binary, checks and runs each on its own platform, and attaches them to a GitHub Release as `<tool>-<ref>-<target>.tar.gz`, each holding a bare `<tool>` executable, with a `SHA256SUMS` file.
 
 ## Example
 
